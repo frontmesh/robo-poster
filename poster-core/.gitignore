@@ -1,0 +1,10 @@
+/target
+*.o
+*.d
+*.so
+*.dylib
+*.dll
+node_modules/
+elm-stuff/
+elm.js
+.env

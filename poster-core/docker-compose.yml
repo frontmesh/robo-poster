@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: poster
+      POSTGRES_USER: poster
+      POSTGRES_PASSWORD: poster
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://poster:poster@db:5432/poster
+      JWT_SECRET: change-me-in-production
+      META_APP_ID: your-meta-app-id
+      META_APP_SECRET: your-meta-app-secret
+      META_REDIRECT_URI: http://localhost:3000/api/accounts/callback
+      PREMIUM_API_URL: http://localhost:3001
+      PREMIUM_API_KEY: your-premium-api-key
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
