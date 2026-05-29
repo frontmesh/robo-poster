@@ -1,4 +1,4 @@
-use axum::{routing::get, routing::post, routing::put, Router};
+use axum::{middleware, routing::get, routing::post, routing::put, Router};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -48,9 +48,11 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let app = Router::new()
+    let public_routes = Router::new()
         .route("/api/auth/register", post(auth::register))
-        .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/login", post(auth::login));
+
+    let protected_routes = Router::new()
         .route("/api/accounts", get(accounts::list))
         .route("/api/accounts/connect", post(accounts::connect))
         .route("/api/accounts/callback", get(accounts::callback))
@@ -66,6 +68,10 @@ async fn main() {
             "/api/analytics/{account_id}",
             get(premium::get_analytics),
         )
+        .layer(middleware::from_fn(auth::middleware::auth_middleware));
+
+    let app = public_routes
+        .merge(protected_routes)
         .layer(cors)
         .with_state(state);
 

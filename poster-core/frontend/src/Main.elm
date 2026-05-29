@@ -36,6 +36,11 @@ init _ =
             , aiGenerating = False
             }
       , error = Nothing
+      , loginEmail = ""
+      , loginPassword = ""
+      , registerEmail = ""
+      , registerPassword = ""
+      , loading = False
       }
     , Cmd.none
     )
@@ -49,42 +54,94 @@ update msg model =
                 cmd =
                     case page of
                         Dashboard ->
-                            Api.getPosts GotPosts
+                            Api.getPosts model.token GotPosts
 
                         Accounts ->
-                            Api.getAccounts GotAccounts
+                            Api.getAccounts model.token GotAccounts
 
                         Calendar ->
-                            Api.getCalendar GotCalendar
+                            Api.getCalendar model.token GotCalendar
 
                         _ ->
                             Cmd.none
             in
             ( { model | page = page }, cmd )
 
-        LoginEmail _ ->
-            ( model, Cmd.none )
+        LoginEmail email ->
+            ( { model | loginEmail = email }, Cmd.none )
 
-        LoginPassword _ ->
-            ( model, Cmd.none )
+        LoginPassword password ->
+            ( { model | loginPassword = password }, Cmd.none )
 
         DoLogin ->
-            ( model, Cmd.none )
+            ( { model | loading = True }
+            , Api.loginRequest model.loginEmail model.loginPassword LoginResult
+            )
 
-        LoginResult _ ->
-            ( model, Cmd.none )
+        LoginResult result ->
+            case result of
+                Ok token ->
+                    ( { model
+                        | token = Just token
+                        , page = Dashboard
+                        , loading = False
+                        , loginEmail = ""
+                        , loginPassword = ""
+                      }
+                    , Api.getPosts (Just token) GotPosts
+                    )
 
-        RegisterEmail _ ->
-            ( model, Cmd.none )
+                Err _ ->
+                    ( { model
+                        | error = Just "Invalid email or password"
+                        , loading = False
+                      }
+                    , Cmd.none
+                    )
 
-        RegisterPassword _ ->
-            ( model, Cmd.none )
+        RegisterEmail email ->
+            ( { model | registerEmail = email }, Cmd.none )
+
+        RegisterPassword password ->
+            ( { model | registerPassword = password }, Cmd.none )
 
         DoRegister ->
-            ( model, Cmd.none )
+            ( { model | loading = True }
+            , Api.registerRequest model.registerEmail model.registerPassword RegisterResult
+            )
 
-        RegisterResult _ ->
-            ( model, Cmd.none )
+        RegisterResult result ->
+            case result of
+                Ok token ->
+                    ( { model
+                        | token = Just token
+                        , page = Dashboard
+                        , loading = False
+                        , registerEmail = ""
+                        , registerPassword = ""
+                      }
+                    , Api.getPosts (Just token) GotPosts
+                    )
+
+                Err _ ->
+                    ( { model
+                        | error = Just "Registration failed. Email may already be in use."
+                        , loading = False
+                      }
+                    , Cmd.none
+                    )
+
+        Logout ->
+            ( { model
+                | token = Nothing
+                , userId = Nothing
+                , page = Login
+                , posts = []
+                , accounts = []
+                , calendar = []
+              }
+            , Cmd.none
+            )
 
         GotPosts result ->
             case result of
@@ -139,7 +196,7 @@ update msg model =
                 cmd =
                     case compose.aiPrompt of
                         Just prompt ->
-                            Api.generateContent "" prompt compose.platform GotGeneratedContent
+                            Api.generateContent model.token prompt compose.platform GotGeneratedContent
 
                         Nothing ->
                             Cmd.none
@@ -166,7 +223,7 @@ update msg model =
                 cmd =
                     case compose.selectedAccount of
                         Just accountId ->
-                            Api.createPost "" accountId compose.content compose.scheduledAt compose.platform PostCreated
+                            Api.createPost model.token accountId compose.content compose.scheduledAt compose.platform PostCreated
 
                         Nothing ->
                             Cmd.none
@@ -176,24 +233,24 @@ update msg model =
         PostCreated result ->
             case result of
                 Ok _ ->
-                    ( { model | page = Dashboard }, Api.getPosts GotPosts )
+                    ( { model | page = Dashboard }, Api.getPosts model.token GotPosts )
 
                 Err _ ->
                     ( { model | error = Just "Failed to create post" }, Cmd.none )
 
         PublishPost postId ->
-            ( model, Api.publishPost "" postId PostPublished )
+            ( model, Api.publishPost model.token postId PostPublished )
 
         PostPublished result ->
             case result of
                 Ok _ ->
-                    ( model, Api.getPosts GotPosts )
+                    ( model, Api.getPosts model.token GotPosts )
 
                 Err _ ->
                     ( { model | error = Just "Failed to publish post" }, Cmd.none )
 
         ConnectAccount ->
-            ( model, Api.connectAccount GotOAuthUrl )
+            ( model, Api.connectAccount model.token GotOAuthUrl )
 
         GotOAuthUrl result ->
             case result of
@@ -225,13 +282,18 @@ viewNavbar : Model -> Html Msg
 viewNavbar model =
     nav [ class "navbar" ]
         [ div [ class "navbar-brand" ] [ text "Poster" ]
-        , div [ class "navbar-menu" ]
-            [ navLink Dashboard "Dashboard"
-            , navLink Composer "Composer"
-            , navLink Calendar "Calendar"
-            , navLink Accounts "Accounts"
-            , navLink Analytics "Analytics"
-            ]
+        , if model.token /= Nothing then
+            div [ class "navbar-menu" ]
+                [ navLink Dashboard "Dashboard"
+                , navLink Composer "Composer"
+                , navLink Calendar "Calendar"
+                , navLink Accounts "Accounts"
+                , navLink Analytics "Analytics"
+                , a [ class "nav-link", onClick Logout ] [ text "Logout" ]
+                ]
+
+          else
+            text ""
         ]
 
 
@@ -257,7 +319,7 @@ viewPage : Model -> Html Msg
 viewPage model =
     case model.page of
         Login ->
-            viewLogin
+            viewLogin model
 
         Dashboard ->
             viewDashboard model
@@ -278,16 +340,53 @@ viewPage model =
             viewSettings
 
 
-viewLogin : Html Msg
-viewLogin =
+viewLogin : Model -> Html Msg
+viewLogin model =
     div [ class "page login-page" ]
         [ h1 [] [ text "Poster" ]
-        , p [] [ text "Marketing automation for Threads & Instagram" ]
+        , p [ class "subtitle" ] [ text "Marketing automation for Threads & Instagram" ]
         , div [ class "login-form" ]
-            [ input [ placeholder "Email", type_ "email" ] []
-            , input [ placeholder "Password", type_ "password" ] []
-            , button [ onClick DoLogin ] [ text "Login" ]
-            , button [ onClick DoRegister ] [ text "Register" ]
+            [ h2 [] [ text "Login" ]
+            , input
+                [ placeholder "Email"
+                , type_ "email"
+                , value model.loginEmail
+                , onInput LoginEmail
+                ]
+                []
+            , input
+                [ placeholder "Password"
+                , type_ "password"
+                , value model.loginPassword
+                , onInput LoginPassword
+                ]
+                []
+            , button
+                [ onClick DoLogin
+                , disabled model.loading
+                ]
+                [ text (if model.loading then "Logging in..." else "Login") ]
+            , div [ class "divider" ] [ text "or" ]
+            , h2 [] [ text "Register" ]
+            , input
+                [ placeholder "Email"
+                , type_ "email"
+                , value model.registerEmail
+                , onInput RegisterEmail
+                ]
+                []
+            , input
+                [ placeholder "Password (min 8 characters)"
+                , type_ "password"
+                , value model.registerPassword
+                , onInput RegisterPassword
+                ]
+                []
+            , button
+                [ onClick DoRegister
+                , disabled model.loading
+                ]
+                [ text (if model.loading then "Registering..." else "Register") ]
             ]
         ]
 
@@ -296,8 +395,12 @@ viewDashboard : Model -> Html Msg
 viewDashboard model =
     div [ class "page" ]
         [ h1 [] [ text "Dashboard" ]
-        , div [ class "posts-list" ]
-            (List.map viewPostCard model.posts)
+        , if List.isEmpty model.posts then
+            p [] [ text "No posts yet. Create one in the Composer." ]
+
+          else
+            div [ class "posts-list" ]
+                (List.map viewPostCard model.posts)
         ]
 
 
@@ -309,9 +412,13 @@ viewPostCard post =
             [ span [ class "post-status" ] [ text post.status ]
             , span [ class "post-platform" ] [ text post.platform ]
             ]
-        , div [ class "post-actions" ]
-            [ button [ onClick (PublishPost post.id) ] [ text "Publish" ]
-            ]
+        , if post.status == "draft" || post.status == "scheduled" then
+            div [ class "post-actions" ]
+                [ button [ onClick (PublishPost post.id) ] [ text "Publish Now" ]
+                ]
+
+          else
+            text ""
         ]
 
 
@@ -320,8 +427,12 @@ viewAccounts model =
     div [ class "page" ]
         [ h1 [] [ text "Accounts" ]
         , button [ onClick ConnectAccount ] [ text "+ Connect Instagram" ]
-        , div [ class "accounts-list" ]
-            (List.map viewAccountCard model.accounts)
+        , if List.isEmpty model.accounts then
+            p [] [ text "No accounts connected." ]
+
+          else
+            div [ class "accounts-list" ]
+                (List.map viewAccountCard model.accounts)
         ]
 
 
@@ -362,7 +473,11 @@ viewComposer model =
                     , onInput UpdateAiPrompt
                     ]
                     []
-                , button [ onClick GenerateContent ] [ text "Generate" ]
+                , button
+                    [ onClick GenerateContent
+                    , disabled compose.aiGenerating
+                    ]
+                    [ text (if compose.aiGenerating then "Generating..." else "Generate") ]
                 ]
             ]
         ]
@@ -372,8 +487,12 @@ viewCalendar : Model -> Html Msg
 viewCalendar model =
     div [ class "page" ]
         [ h1 [] [ text "Content Calendar" ]
-        , div [ class "calendar" ]
-            (List.map viewCalendarDay model.calendar)
+        , if List.isEmpty model.calendar then
+            p [] [ text "No scheduled posts." ]
+
+          else
+            div [ class "calendar" ]
+                (List.map viewCalendarDay model.calendar)
         ]
 
 

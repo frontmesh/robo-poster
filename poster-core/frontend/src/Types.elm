@@ -13,6 +13,11 @@ type alias Model =
     , calendar : List CalendarDay
     , compose : ComposeModel
     , error : Maybe String
+    , loginEmail : String
+    , loginPassword : String
+    , registerEmail : String
+    , registerPassword : String
+    , loading : Bool
     }
 
 
@@ -85,3 +90,4 @@ type Msg
     | DoRegister
     | RegisterResult (Result Http.Error String)
     | DismissError
+    | Logout

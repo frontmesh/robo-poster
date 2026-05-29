@@ -6,6 +6,8 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::AppState;
 
+pub mod middleware;
+
 #[derive(Deserialize)]
 pub struct RegisterRequest {
     pub email: String,
@@ -28,6 +30,27 @@ pub async fn register(
     State(state): State<std::sync::Arc<AppState>>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
+    if req.password.len() < 8 {
+        return Err(AppError::BadRequest(
+            "Password must be at least 8 characters".to_string(),
+        ));
+    }
+
+    if !req.email.contains('@') {
+        return Err(AppError::BadRequest("Invalid email".to_string()));
+    }
+
+    let existing = sqlx::query("SELECT id FROM users WHERE email = $1")
+        .bind(&req.email)
+        .fetch_optional(&state.db)
+        .await?;
+
+    if existing.is_some() {
+        return Err(AppError::BadRequest(
+            "Email already registered".to_string(),
+        ));
+    }
+
     let password_hash = hash_password(&req.password);
     let user_id = Uuid::new_v4();
 

@@ -11,6 +11,16 @@ baseUrl =
     "http://localhost:3000/api"
 
 
+authHeader : Maybe String -> List Http.header
+authHeader token =
+    case token of
+        Just t ->
+            [ Http.header "Authorization" ("Bearer " ++ t) ]
+
+        Nothing ->
+            []
+
+
 loginRequest : String -> String -> (Result Http.Error String -> msg) -> Cmd msg
 loginRequest email password toMsg =
     Http.post
@@ -41,34 +51,51 @@ registerRequest email password toMsg =
         }
 
 
-getPosts : (Result Http.Error (List Post) -> msg) -> Cmd msg
-getPosts toMsg =
-    Http.get
-        { url = baseUrl ++ "/posts"
+getPosts : Maybe String -> (Result Http.Error (List Post) -> msg) -> Cmd msg
+getPosts token toMsg =
+    Http.request
+        { method = "GET"
+        , headers = authHeader token
+        , url = baseUrl ++ "/posts"
+        , body = Http.emptyBody
         , expect = Http.expectJson toMsg (Decode.list postDecoder)
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
-getAccounts : (Result Http.Error (List Account) -> msg) -> Cmd msg
-getAccounts toMsg =
-    Http.get
-        { url = baseUrl ++ "/accounts"
+getAccounts : Maybe String -> (Result Http.Error (List Account) -> msg) -> Cmd msg
+getAccounts token toMsg =
+    Http.request
+        { method = "GET"
+        , headers = authHeader token
+        , url = baseUrl ++ "/accounts"
+        , body = Http.emptyBody
         , expect = Http.expectJson toMsg (Decode.list accountDecoder)
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
-getCalendar : (Result Http.Error (List CalendarDay) -> msg) -> Cmd msg
-getCalendar toMsg =
-    Http.get
-        { url = baseUrl ++ "/calendar"
+getCalendar : Maybe String -> (Result Http.Error (List CalendarDay) -> msg) -> Cmd msg
+getCalendar token toMsg =
+    Http.request
+        { method = "GET"
+        , headers = authHeader token
+        , url = baseUrl ++ "/calendar"
+        , body = Http.emptyBody
         , expect = Http.expectJson toMsg (Decode.list calendarDayDecoder)
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
-createPost : String -> String -> Maybe String -> Maybe String -> String -> (Result Http.Error Post -> msg) -> Cmd msg
+createPost : Maybe String -> String -> String -> Maybe String -> Maybe String -> String -> (Result Http.Error Post -> msg) -> Cmd msg
 createPost token accountId content scheduledAt platform toMsg =
-    Http.post
-        { url = baseUrl ++ "/posts"
+    Http.request
+        { method = "POST"
+        , headers = authHeader token
+        , url = baseUrl ++ "/posts"
         , body =
             Http.jsonBody
                 (Encode.object
@@ -86,22 +113,30 @@ createPost token accountId content scheduledAt platform toMsg =
                     ]
                 )
         , expect = Http.expectJson toMsg postDecoder
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
-publishPost : String -> String -> (Result Http.Error Post -> msg) -> Cmd msg
+publishPost : Maybe String -> String -> (Result Http.Error Post -> msg) -> Cmd msg
 publishPost token postId toMsg =
-    Http.post
-        { url = baseUrl ++ "/posts/" ++ postId ++ "/publish"
+    Http.request
+        { method = "POST"
+        , headers = authHeader token
+        , url = baseUrl ++ "/posts/" ++ postId ++ "/publish"
         , body = Http.jsonBody Encode.null
         , expect = Http.expectJson toMsg postDecoder
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
-generateContent : String -> String -> String -> (Result Http.Error String -> msg) -> Cmd msg
+generateContent : Maybe String -> String -> String -> (Result Http.Error String -> msg) -> Cmd msg
 generateContent token prompt platform toMsg =
-    Http.post
-        { url = baseUrl ++ "/ai/generate"
+    Http.request
+        { method = "POST"
+        , headers = authHeader token
+        , url = baseUrl ++ "/ai/generate"
         , body =
             Http.jsonBody
                 (Encode.object
@@ -110,14 +145,21 @@ generateContent token prompt platform toMsg =
                     ]
                 )
         , expect = Http.expectJson toMsg (Decode.field "content" Decode.string)
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
-connectAccount : (Result Http.Error String -> msg) -> Cmd msg
-connectAccount toMsg =
-    Http.get
-        { url = baseUrl ++ "/accounts/connect"
+connectAccount : Maybe String -> (Result Http.Error String -> msg) -> Cmd msg
+connectAccount token toMsg =
+    Http.request
+        { method = "POST"
+        , headers = authHeader token
+        , url = baseUrl ++ "/accounts/connect"
+        , body = Http.jsonBody Encode.null
         , expect = Http.expectJson toMsg (Decode.field "url" Decode.string)
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
