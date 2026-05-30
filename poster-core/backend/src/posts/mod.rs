@@ -204,14 +204,14 @@ pub async fn publish(
     .ok_or(AppError::NotFound)?;
 
     let meta_client = crate::meta::MetaClient::new(&state.config);
-    let platform_post_id = meta_client
+    let result = meta_client
         .publish_post(&account, &post)
         .await?;
 
     sqlx::query(
         "UPDATE posts SET status = 'published', published_at = NOW(), platform_post_id = $1 WHERE id = $2",
     )
-    .bind(&platform_post_id)
+    .bind(&result.post_id)
     .bind(id)
     .execute(&state.db)
     .await?;

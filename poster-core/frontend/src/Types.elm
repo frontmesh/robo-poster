@@ -18,6 +18,7 @@ type alias Model =
     , registerEmail : String
     , registerPassword : String
     , loading : Bool
+    , publishing : Maybe String
     }
 
 
@@ -36,6 +37,8 @@ type alias ComposeModel =
     , selectedAccount : Maybe String
     , scheduledAt : Maybe String
     , platform : String
+    , mediaType : String
+    , mediaUrl : Maybe String
     , aiPrompt : Maybe String
     , aiGenerating : Bool
     }
@@ -77,6 +80,9 @@ type Msg
     | UpdateComposeContent String
     | UpdateComposePlatform String
     | UpdateComposeAccount String
+    | UpdateComposeMediaType String
+    | UpdateComposeMediaUrl String
+    | UpdateComposeSchedule (Maybe String)
     | UpdateAiPrompt String
     | GenerateContent
     | GotGeneratedContent (Result Http.Error String)
@@ -98,3 +104,4 @@ type Msg
     | RegisterResult (Result Http.Error String)
     | DismissError
     | Logout
+    | ClearCompose

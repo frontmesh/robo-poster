@@ -34,11 +34,11 @@ async fn publish_scheduled_posts(pool: &sqlx::PgPool) -> Result<(), sqlx::Error>
             let meta_client = crate::meta::MetaClient::new(&config);
 
             match meta_client.publish_post(&account, &post).await {
-                Ok(platform_post_id) => {
+                Ok(result) => {
                     sqlx::query(
                         "UPDATE posts SET status = 'published', published_at = NOW(), platform_post_id = $1 WHERE id = $2",
                     )
-                    .bind(&platform_post_id)
+                    .bind(&result.post_id)
                     .bind(post.id)
                     .execute(pool)
                     .await?;
