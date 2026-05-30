@@ -181,6 +181,13 @@ update msg model =
             in
             ( { model | compose = { compose | platform = platform } }, Cmd.none )
 
+        UpdateComposeAccount accountId ->
+            let
+                compose =
+                    model.compose
+            in
+            ( { model | compose = { compose | selectedAccount = Just accountId } }, Cmd.none )
+
         UpdateAiPrompt prompt ->
             let
                 compose =
@@ -259,6 +266,17 @@ update msg model =
 
                 Err _ ->
                     ( { model | error = Just "Failed to start OAuth" }, Cmd.none )
+
+        DeleteAccount accountId ->
+            ( model, Api.deleteAccount model.token accountId AccountDeleted )
+
+        AccountDeleted result ->
+            case result of
+                Ok _ ->
+                    ( model, Api.getAccounts model.token GotAccounts )
+
+                Err _ ->
+                    ( { model | error = Just "Failed to delete account" }, Cmd.none )
 
         DismissError ->
             ( { model | error = Nothing }, Cmd.none )
@@ -426,9 +444,12 @@ viewAccounts : Model -> Html Msg
 viewAccounts model =
     div [ class "page" ]
         [ h1 [] [ text "Accounts" ]
-        , button [ onClick ConnectAccount ] [ text "+ Connect Instagram" ]
+        , button [ onClick ConnectAccount, class "btn-primary" ] [ text "+ Connect Instagram / Threads" ]
         , if List.isEmpty model.accounts then
-            p [] [ text "No accounts connected." ]
+            div [ class "empty-state" ]
+                [ p [] [ text "No accounts connected." ]
+                , p [] [ text "Connect your Instagram Business account to start posting." ]
+                ]
 
           else
             div [ class "accounts-list" ]
@@ -439,8 +460,26 @@ viewAccounts model =
 viewAccountCard : Account -> Html Msg
 viewAccountCard account =
     div [ class "account-card" ]
-        [ div [ class "account-username" ] [ text account.username ]
-        , div [ class "account-provider" ] [ text account.provider ]
+        [ div [ class "account-header" ]
+            [ div [ class "account-info" ]
+                [ div [ class "account-username" ] [ text account.username ]
+                , div [ class "account-provider" ] [ text account.provider ]
+                ]
+            , button
+                [ class "btn-danger"
+                , onClick (DeleteAccount account.id)
+                ]
+                [ text "Disconnect" ]
+            ]
+        , div [ class "account-details" ]
+            [ div [] [ text ("User ID: " ++ account.providerUserId) ]
+            , case account.tokenExpiresAt of
+                Just expires ->
+                    div [] [ text ("Token expires: " ++ expires) ]
+
+                Nothing ->
+                    text ""
+            ]
         ]
 
 
@@ -453,7 +492,27 @@ viewComposer model =
     div [ class "page" ]
         [ h1 [] [ text "Compose Post" ]
         , div [ class "composer" ]
-            [ textarea
+            [ if List.isEmpty model.accounts then
+                div [ class "warning" ]
+                    [ text "Connect an account first in the "
+                    , a [ onClick (Navigate Accounts) ] [ text "Accounts" ]
+                    , text " page."
+                    ]
+
+              else
+                div [ class "form-group" ]
+                    [ label [] [ text "Account" ]
+                    , select [ onInput UpdateComposeAccount ]
+                        (option [ value "" ] [ text "Select account..." ]
+                            :: List.map
+                                (\a ->
+                                    option [ value a.id ]
+                                        [ text (a.username ++ " (" ++ a.provider ++ ")") ]
+                                )
+                                model.accounts
+                        )
+                    ]
+            , textarea
                 [ placeholder "What's on your mind?"
                 , value compose.content
                 , onInput UpdateComposeContent
@@ -464,7 +523,7 @@ viewComposer model =
                     [ option [ value "threads" ] [ text "Threads" ]
                     , option [ value "instagram" ] [ text "Instagram" ]
                     ]
-                , button [ onClick CreatePost ] [ text "Save Draft" ]
+                , button [ onClick CreatePost, disabled (compose.selectedAccount == Nothing) ] [ text "Save Draft" ]
                 ]
             , div [ class "ai-section" ]
                 [ h3 [] [ text "AI Assistant" ]

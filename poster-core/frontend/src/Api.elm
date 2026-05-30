@@ -163,24 +163,41 @@ connectAccount token toMsg =
         }
 
 
+deleteAccount : Maybe String -> String -> (Result Http.Error () -> msg) -> Cmd msg
+deleteAccount token accountId toMsg =
+    Http.request
+        { method = "DELETE"
+        , headers = authHeader token
+        , url = baseUrl ++ "/accounts/" ++ accountId
+        , body = Http.emptyBody
+        , expect = Http.expectWhatever (\_ -> toMsg (Ok ()))
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
 postDecoder : Decode.Decoder Post
 postDecoder =
-    Decode.map7 Post
+    Decode.map8 Post
         (Decode.field "id" Decode.string)
         (Decode.field "content" Decode.string)
-        (Decode.field "mediaUrl" (Decode.nullable Decode.string))
-        (Decode.field "scheduledAt" (Decode.nullable Decode.string))
-        (Decode.field "publishedAt" (Decode.nullable Decode.string))
+        (Decode.field "media_url" (Decode.nullable Decode.string))
+        (Decode.field "scheduled_at" (Decode.nullable Decode.string))
+        (Decode.field "published_at" (Decode.nullable Decode.string))
         (Decode.field "status" Decode.string)
         (Decode.field "platform" Decode.string)
+        (Decode.field "account_id" Decode.string)
 
 
 accountDecoder : Decode.Decoder Account
 accountDecoder =
-    Decode.map3 Account
+    Decode.map6 Account
         (Decode.field "id" Decode.string)
         (Decode.field "provider" Decode.string)
+        (Decode.field "provider_user_id" Decode.string)
         (Decode.field "username" Decode.string)
+        (Decode.field "token_expires_at" (Decode.nullable Decode.string))
+        (Decode.field "created_at" Decode.string)
 
 
 calendarDayDecoder : Decode.Decoder CalendarDay

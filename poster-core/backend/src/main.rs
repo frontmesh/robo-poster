@@ -1,4 +1,4 @@
-use axum::{middleware, routing::get, routing::post, routing::put, Router};
+use axum::{middleware, routing::delete, routing::get, routing::post, routing::put, Router};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -56,6 +56,7 @@ async fn main() {
         .route("/api/accounts", get(accounts::list))
         .route("/api/accounts/connect", post(accounts::connect))
         .route("/api/accounts/callback", get(accounts::callback))
+        .route("/api/accounts/{id}", delete(accounts::delete))
         .route("/api/posts", get(posts::list).post(posts::create))
         .route(
             "/api/posts/{id}",

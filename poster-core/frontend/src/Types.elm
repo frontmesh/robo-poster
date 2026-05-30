@@ -49,13 +49,17 @@ type alias Post =
     , publishedAt : Maybe String
     , status : String
     , platform : String
+    , accountId : String
     }
 
 
 type alias Account =
     { id : String
     , provider : String
+    , providerUserId : String
     , username : String
+    , tokenExpiresAt : Maybe String
+    , createdAt : String
     }
 
 
@@ -72,6 +76,7 @@ type Msg
     | GotCalendar (Result Http.Error (List CalendarDay))
     | UpdateComposeContent String
     | UpdateComposePlatform String
+    | UpdateComposeAccount String
     | UpdateAiPrompt String
     | GenerateContent
     | GotGeneratedContent (Result Http.Error String)
@@ -81,6 +86,8 @@ type Msg
     | PostPublished (Result Http.Error Post)
     | ConnectAccount
     | GotOAuthUrl (Result Http.Error String)
+    | DeleteAccount String
+    | AccountDeleted (Result Http.Error ())
     | LoginEmail String
     | LoginPassword String
     | DoLogin
