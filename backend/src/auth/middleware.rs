@@ -15,12 +15,32 @@ pub struct AuthUser {
 
 impl AuthUser {
     pub fn from_token(token: &str, secret: &str) -> Result<Self, AppError> {
+        use base64::Engine;
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+
         let parts: Vec<&str> = token.split('.').collect();
-        if parts.len() != 2 {
+        if parts.len() != 3 {
             return Err(AppError::Unauthorized);
         }
 
-        use base64::Engine;
+        let signing_input = format!("{}.{}", parts[0], parts[1]);
+        let signature_b64 = parts[2];
+
+        // Verify signature
+        type HmacSha256 = Hmac<Sha256>;
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+            .map_err(|_| AppError::Unauthorized)?;
+        mac.update(signing_input.as_bytes());
+
+        let signature_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(signature_b64)
+            .map_err(|_| AppError::Unauthorized)?;
+
+        mac.verify_slice(&signature_bytes)
+            .map_err(|_| AppError::Unauthorized)?;
+
+        // Parse payload
         let payload_b64 = parts[1];
         let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(payload_b64)
@@ -29,6 +49,7 @@ impl AuthUser {
         let payload: serde_json::Value = serde_json::from_slice(&payload_bytes)
             .map_err(|_| AppError::Unauthorized)?;
 
+        // Check expiry
         let exp = payload["exp"]
             .as_i64()
             .ok_or(AppError::Unauthorized)?;
@@ -38,6 +59,7 @@ impl AuthUser {
             return Err(AppError::Unauthorized);
         }
 
+        // Extract user_id
         let user_id_str = payload["sub"]
             .as_str()
             .ok_or(AppError::Unauthorized)?;

@@ -20,3 +20,8 @@ thiserror = "2"
 base64 = "0.22"
 url = "2"
 blake3 = "1"
+hmac = "0.12"
+sha2 = "0.10"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }

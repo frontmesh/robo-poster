@@ -78,7 +78,7 @@ impl MetaClient {
         })
     }
 
-    fn get_base_url(&self, account: &Account) -> String {
+    pub fn get_base_url(&self, account: &Account) -> String {
         match account.provider.as_str() {
             "threads" => "https://graph.threads.net/v1.0".to_string(),
             "instagram" => "https://graph.facebook.com/v19.0".to_string(),

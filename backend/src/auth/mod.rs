@@ -94,13 +94,13 @@ pub async fn login(
     }))
 }
 
-fn hash_password(password: &str) -> String {
+pub fn hash_password(password: &str) -> String {
     use base64::Engine;
     let hash = blake3::hash(password.as_bytes());
     base64::engine::general_purpose::STANDARD.encode(hash.as_bytes())
 }
 
-fn verify_password(password: &str, hash: &str) -> bool {
+pub fn verify_password(password: &str, hash: &str) -> bool {
     use base64::Engine;
     let computed = blake3::hash(password.as_bytes());
     let decoded = base64::engine::general_purpose::STANDARD
@@ -109,8 +109,11 @@ fn verify_password(password: &str, hash: &str) -> bool {
     computed.as_bytes() == decoded.as_slice()
 }
 
-fn create_jwt(user_id: Uuid, secret: &str) -> String {
+pub fn create_jwt(user_id: Uuid, secret: &str) -> String {
     use base64::Engine;
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
     let header = r#"{"alg":"HS256","typ":"JWT"}"#;
     let exp = chrono::Utc::now() + chrono::Duration::hours(24);
     let payload = format!(
@@ -121,7 +124,14 @@ fn create_jwt(user_id: Uuid, secret: &str) -> String {
 
     let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(header);
     let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload);
-    let signature = format!("{}.{}", header_b64, payload_b64);
 
-    signature
+    let signing_input = format!("{}.{}", header_b64, payload_b64);
+
+    type HmacSha256 = Hmac<Sha256>;
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+        .expect("HMAC can take key of any size");
+    mac.update(signing_input.as_bytes());
+    let signature = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&mac.finalize().into_bytes());
+
+    format!("{}.{}", signing_input, signature)
 }

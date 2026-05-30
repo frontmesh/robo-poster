@@ -3,20 +3,14 @@ use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
-mod accounts;
-mod auth;
-mod config;
-mod db;
-mod error;
-mod meta;
-mod posts;
-mod premium;
-mod scheduler;
-
-pub struct AppState {
-    pub db: sqlx::PgPool,
-    pub config: config::Config,
-}
+use poster_core::accounts;
+use poster_core::auth;
+use poster_core::config;
+use poster_core::meta;
+use poster_core::posts;
+use poster_core::premium;
+use poster_core::scheduler;
+use poster_core::AppState;
 
 #[tokio::main]
 async fn main() {
