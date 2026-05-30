@@ -5,72 +5,138 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Poster - Marketing Automation</title>
     <style>
+        :root {
+            --primary: #1a1a2e;
+            --primary-hover: #16213e;
+            --secondary: #6c757d;
+            --secondary-hover: #5a6268;
+            --danger: #dc3545;
+            --danger-hover: #c82333;
+            --success: #28a745;
+            --warning: #ffc107;
+            --bg: #f5f5f5;
+            --card-bg: white;
+            --border: #e9ecef;
+            --text: #333;
+            --text-muted: #666;
+            --border-radius: 8px;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
         .app { min-height: 100vh; }
-        .navbar { display: flex; align-items: center; padding: 1rem 2rem; background: #1a1a2e; color: white; }
+        .navbar { display: flex; align-items: center; padding: 1rem 2rem; background: var(--primary); color: white; }
         .navbar-brand { font-size: 1.5rem; font-weight: bold; margin-right: 2rem; }
-        .navbar-menu { display: flex; gap: 1rem; align-items: center; }
-        .nav-link { color: #ccc; cursor: pointer; padding: 0.5rem 1rem; border-radius: 4px; }
-        .nav-link:hover { background: #16213e; color: white; }
+        .navbar-menu { display: flex; gap: 0.5rem; align-items: center; }
+        .nav-link { color: #ccc; cursor: pointer; padding: 0.5rem 1rem; border-radius: 4px; transition: background 0.2s; }
+        .nav-link:hover { background: var(--primary-hover); color: white; }
+        .nav-link.logout { margin-left: auto; color: #ff6b6b; }
         .page { max-width: 1200px; margin: 2rem auto; padding: 0 2rem; }
         .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
-        .error-banner { background: #ff4444; color: white; padding: 1rem 2rem; display: flex; justify-content: space-between; }
-        .error-banner button { background: none; border: none; color: white; cursor: pointer; font-size: 1.2rem; }
-        .login-page { text-align: center; padding-top: 10vh; }
-        .login-page .subtitle { color: #666; margin-bottom: 2rem; }
-        .login-form { max-width: 320px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; }
-        .login-form h2 { margin-top: 1rem; color: #333; }
-        .divider { text-align: center; color: #999; margin: 1rem 0; }
-        input, textarea, select { padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; width: 100%; }
-        input:focus, textarea:focus, select:focus { outline: none; border-color: #1a1a2e; }
-        textarea { min-height: 150px; resize: vertical; }
-        button, .btn-primary, .btn-secondary, .btn-danger { padding: 0.75rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
-        .btn-primary { background: #1a1a2e; color: white; }
-        .btn-primary:hover { background: #16213e; }
-        .btn-secondary { background: #6c757d; color: white; }
-        .btn-secondary:hover { background: #5a6268; }
-        .btn-danger { background: #dc3545; color: white; }
-        .btn-danger:hover { background: #c82333; }
-        button:disabled, .btn-primary:disabled, .btn-secondary:disabled { background: #999; cursor: not-allowed; }
+        .messages { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem; }
+        .error-banner { background: var(--danger); color: white; padding: 1rem 2rem; border-radius: var(--border-radius); display: flex; align-items: center; gap: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .success-banner { background: var(--success); color: white; padding: 1rem 2rem; border-radius: var(--border-radius); display: flex; align-items: center; gap: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .error-banner button, .success-banner button { background: none; border: none; color: white; cursor: pointer; font-size: 1.2rem; padding: 0; opacity: 0.8; }
+        .error-banner button:hover, .success-banner button:hover { opacity: 1; }
+        .login-page { display: flex; justify-content: center; align-items: center; min-height: calc(100vh - 70px); }
+        .login-card { background: var(--card-bg); padding: 2.5rem; border-radius: var(--border-radius); box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 380px; text-align: center; }
+        .login-card h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+        .login-card .subtitle { color: var(--text-muted); margin-bottom: 2rem; }
+        .login-form { display: flex; flex-direction: column; gap: 1rem; text-align: left; }
+        .login-form h2 { margin-top: 1rem; color: var(--text); font-size: 1rem; }
+        .divider { text-align: center; color: var(--text-muted); margin: 1rem 0; position: relative; }
+        .divider::before, .divider::after { content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: var(--border); }
+        .divider::before { left: 0; }
+        .divider::after { right: 0; }
+        input, textarea, select { padding: 0.75rem; border: 1px solid var(--border); border-radius: 4px; font-size: 1rem; width: 100%; transition: border-color 0.2s; }
+        input:focus, textarea:focus, select:focus { outline: none; border-color: var(--primary); }
+        textarea { min-height: 120px; resize: vertical; }
+        button, .btn-primary, .btn-secondary, .btn-danger, .btn-ghost { padding: 0.75rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.95rem; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-secondary { background: var(--secondary); color: white; }
+        .btn-secondary:hover { background: var(--secondary-hover); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-danger:hover { background: var(--danger-hover); }
+        .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+        .btn-ghost:hover { background: var(--bg); color: var(--text); }
+        .btn-sm { padding: 0.5rem 0.75rem; font-size: 0.85rem; }
+        .btn-full { width: 100%; }
+        button:disabled, .btn-primary:disabled, .btn-secondary:disabled { background: #ccc; cursor: not-allowed; }
+        .filter-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .filter-tab { padding: 0.5rem 1rem; border: 1px solid var(--border); border-radius: 20px; background: var(--card-bg); cursor: pointer; font-size: 0.9rem; color: var(--text-muted); transition: all 0.2s; }
+        .filter-tab:hover { border-color: var(--primary); color: var(--primary); }
+        .filter-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
         .posts-list { display: flex; flex-direction: column; gap: 1rem; }
-        .post-card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .post-card.draft { border-left: 4px solid #6c757d; }
-        .post-card.scheduled { border-left: 4px solid #ffc107; }
-        .post-card.published { border-left: 4px solid #28a745; }
-        .post-header { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-        .status-badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; }
-        .status-draft { background: #6c757d; color: white; }
-        .status-scheduled { background: #ffc107; color: #333; }
-        .status-published { background: #28a745; color: white; }
-        .platform-badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; background: #e9ecef; color: #495057; }
-        .post-content { margin-bottom: 1rem; }
+        .post-card { background: var(--card-bg); padding: 1.5rem; border-radius: var(--border-radius); box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 4px solid var(--border); }
+        .post-card.status-draft { border-left-color: var(--secondary); }
+        .post-card.status-scheduled { border-left-color: var(--warning); }
+        .post-card.status-published { border-left-color: var(--success); }
+        .post-card.status-failed { border-left-color: var(--danger); }
+        .post-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+        .post-badges { display: flex; gap: 0.5rem; }
+        .status-badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .status-badge.status-draft { background: #e9ecef; color: var(--secondary); }
+        .status-badge.status-scheduled { background: #fff3cd; color: #856404; }
+        .status-badge.status-published { background: #d4edda; color: #155724; }
+        .status-badge.status-failed { background: #f8d7da; color: #721c24; }
+        .platform-badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.7rem; background: #e9ecef; color: #495057; text-transform: capitalize; }
+        .post-actions-top { display: flex; gap: 0.5rem; }
+        .post-content { margin-bottom: 1rem; line-height: 1.5; }
         .post-media { margin-bottom: 1rem; }
-        .post-media img { max-width: 100%; max-height: 300px; border-radius: 4px; }
-        .post-meta { display: flex; gap: 1rem; color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
-        .post-actions { display: flex; gap: 0.5rem; }
-        .accounts-list { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
-        .account-card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .account-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-        .account-info { display: flex; flex-direction: column; }
-        .account-username { font-weight: bold; font-size: 1.1rem; }
-        .account-provider { color: #666; font-size: 0.9rem; text-transform: capitalize; }
-        .account-details { color: #666; font-size: 0.9rem; }
-        .composer { display: flex; flex-direction: column; gap: 1rem; max-width: 600px; }
-        .composer-actions { display: flex; gap: 1rem; }
-        .ai-section { margin-top: 1rem; padding: 1rem; background: #f0f0f0; border-radius: 8px; }
-        .ai-section input { width: 100%; }
-        .calendar { display: flex; flex-direction: column; gap: 2rem; }
-        .calendar-day { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .calendar-posts { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
-        .empty-state { text-align: center; padding: 3rem; color: #666; }
-        .empty-state button { margin-top: 1rem; }
-        .warning { background: #fff3cd; color: #856404; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; }
-        .warning a { color: #856404; font-weight: bold; cursor: pointer; }
+        .post-media img { max-width: 100%; max-height: 200px; border-radius: 4px; object-fit: cover; }
+        .post-meta { display: flex; gap: 1rem; color: var(--text-muted); font-size: 0.85rem; }
+        .delete-confirm { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; padding: 0.75rem; background: #fff5f5; border-radius: 4px; }
+        .delete-confirm span { color: var(--danger); font-weight: 500; }
+        .accounts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
+        .account-card { background: var(--card-bg); padding: 1.5rem; border-radius: var(--border-radius); box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 1rem; }
+        .account-icon { font-size: 2rem; }
+        .account-username { font-weight: 600; font-size: 1.1rem; }
+        .account-provider { color: var(--text-muted); font-size: 0.9rem; text-transform: capitalize; }
+        .account-meta { font-size: 0.85rem; }
+        .token-status { display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); }
+        .token-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .token-dot.valid { background: var(--success); }
+        .token-dot.expired { background: var(--danger); }
+        .composer-layout { display: grid; grid-template-columns: 1fr 320px; gap: 2rem; }
+        .composer-main { display: flex; flex-direction: column; gap: 1rem; }
+        .composer-sidebar { display: flex; flex-direction: column; gap: 1.5rem; }
         .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
-        .form-group label { font-weight: bold; color: #333; }
-        .char-count { text-align: right; font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
-        label { font-weight: bold; color: #333; }
+        .form-group label { font-weight: 600; font-size: 0.9rem; color: var(--text); }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .composer-textarea { min-height: 180px; }
+        .char-count { text-align: right; font-size: 0.85rem; color: var(--text-muted); }
+        .composer-actions { display: flex; gap: 1rem; margin-top: 0.5rem; }
+        .ai-section { background: var(--card-bg); padding: 1.5rem; border-radius: var(--border-radius); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .ai-section h3 { margin-bottom: 0.5rem; }
+        .ai-hint { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem; }
+        .ai-input { min-height: 80px; }
+        .preview-section { background: var(--card-bg); padding: 1.5rem; border-radius: var(--border-radius); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .preview-section h3 { margin-bottom: 1rem; }
+        .post-preview { background: var(--bg); padding: 1rem; border-radius: 4px; min-height: 100px; }
+        .preview-content { margin-bottom: 0.5rem; color: var(--text-muted); }
+        .preview-meta { font-size: 0.85rem; color: var(--text-muted); text-transform: capitalize; }
+        .calendar-grid { display: flex; flex-direction: column; gap: 1.5rem; }
+        .calendar-day { background: var(--card-bg); border-radius: var(--border-radius); box-shadow: 0 2px 4px rgba(0,0,0,0.05); overflow: hidden; }
+        .calendar-date { padding: 1rem 1.5rem; background: var(--primary); color: white; font-weight: 600; }
+        .calendar-posts { padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .calendar-post { display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: var(--bg); border-radius: 4px; border-left: 3px solid var(--border); }
+        .calendar-post.status-draft { border-left-color: var(--secondary); }
+        .calendar-post.status-scheduled { border-left-color: var(--warning); }
+        .calendar-post.status-published { border-left-color: var(--success); }
+        .calendar-post-time { font-weight: 600; color: var(--primary); min-width: 50px; }
+        .calendar-post-content { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .calendar-post-meta { display: flex; gap: 0.5rem; }
+        .empty-state { text-align: center; padding: 4rem 2rem; color: var(--text-muted); }
+        .empty-state h3 { margin: 1rem 0 0.5rem; color: var(--text); }
+        .empty-state p { margin-bottom: 1.5rem; }
+        .empty-icon { font-size: 3rem; }
+        .warning-banner { background: #fff3cd; color: #856404; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; }
+        .warning-banner a { color: #856404; font-weight: 600; cursor: pointer; }
+        @media (max-width: 768px) {
+            .composer-layout { grid-template-columns: 1fr; }
+            .form-row { grid-template-columns: 1fr; }
+            .navbar-menu { flex-wrap: wrap; }
+        }
     </style>
 </head>
 <body>

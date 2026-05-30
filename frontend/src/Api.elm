@@ -11,7 +11,7 @@ baseUrl =
     "http://localhost:3000/api"
 
 
-authHeader : Maybe String -> List Http.header
+authHeader : Maybe String -> List Http.Header
 authHeader token =
     case token of
         Just t ->
@@ -90,8 +90,8 @@ getCalendar token toMsg =
         }
 
 
-createPost : Maybe String -> String -> String -> Maybe String -> Maybe String -> String -> (Result Http.Error Post -> msg) -> Cmd msg
-createPost token accountId content scheduledAt platform toMsg =
+createPost : Maybe String -> String -> String -> String -> Maybe String -> (Result Http.Error Post -> msg) -> Cmd msg
+createPost token accountId content platform scheduledAt toMsg =
     Http.request
         { method = "POST"
         , headers = authHeader token
@@ -101,6 +101,7 @@ createPost token accountId content scheduledAt platform toMsg =
                 (Encode.object
                     [ ( "account_id", Encode.string accountId )
                     , ( "content", Encode.string content )
+                    , ( "platform", Encode.string platform )
                     , ( "scheduled_at"
                       , case scheduledAt of
                             Just s ->
@@ -109,7 +110,6 @@ createPost token accountId content scheduledAt platform toMsg =
                             Nothing ->
                                 Encode.null
                       )
-                    , ( "platform", Encode.string platform )
                     ]
                 )
         , expect = Http.expectJson toMsg postDecoder
@@ -126,6 +126,19 @@ publishPost token postId toMsg =
         , url = baseUrl ++ "/posts/" ++ postId ++ "/publish"
         , body = Http.jsonBody Encode.null
         , expect = Http.expectJson toMsg postDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+deletePost : Maybe String -> String -> (Result Http.Error () -> msg) -> Cmd msg
+deletePost token postId toMsg =
+    Http.request
+        { method = "DELETE"
+        , headers = authHeader token
+        , url = baseUrl ++ "/posts/" ++ postId
+        , body = Http.emptyBody
+        , expect = Http.expectWhatever (\_ -> toMsg (Ok ()))
         , timeout = Nothing
         , tracker = Nothing
         }

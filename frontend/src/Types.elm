@@ -1,7 +1,6 @@
 module Types exposing (..)
 
 import Http
-import Time
 
 
 type alias Model =
@@ -13,12 +12,15 @@ type alias Model =
     , calendar : List CalendarDay
     , compose : ComposeModel
     , error : Maybe String
+    , success : Maybe String
     , loginEmail : String
     , loginPassword : String
     , registerEmail : String
     , registerPassword : String
     , loading : Bool
     , publishing : Maybe String
+    , dashboardFilter : PostFilter
+    , deleteConfirm : Maybe String
     }
 
 
@@ -30,6 +32,14 @@ type Page
     | Calendar
     | Analytics
     | Settings
+
+
+type PostFilter
+    = All
+    | Drafts
+    | Scheduled
+    | Published
+    | Failed
 
 
 type alias ComposeModel =
@@ -90,6 +100,8 @@ type Msg
     | PostCreated (Result Http.Error Post)
     | PublishPost String
     | PostPublished (Result Http.Error Post)
+    | DeletePost String
+    | PostDeleted (Result Http.Error ())
     | ConnectAccount
     | GotOAuthUrl (Result Http.Error String)
     | DeleteAccount String
@@ -102,6 +114,10 @@ type Msg
     | RegisterPassword String
     | DoRegister
     | RegisterResult (Result Http.Error String)
+    | SetDashboardFilter PostFilter
+    | ShowDeleteConfirm String
+    | HideDeleteConfirm
     | DismissError
+    | DismissSuccess
     | Logout
     | ClearCompose

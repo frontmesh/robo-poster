@@ -4,6 +4,8 @@ import Browser
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import Html.Events exposing (on)
+import Json.Decode as Decode
 import Http
 import Types exposing (..)
 import Api
@@ -27,26 +29,33 @@ init _ =
       , posts = []
       , accounts = []
       , calendar = []
-      , compose =
-            { content = ""
-            , selectedAccount = Nothing
-            , scheduledAt = Nothing
-            , platform = "threads"
-            , mediaType = "TEXT"
-            , mediaUrl = Nothing
-            , aiPrompt = Nothing
-            , aiGenerating = False
-            }
+      , compose = emptyCompose
       , error = Nothing
+      , success = Nothing
       , loginEmail = ""
       , loginPassword = ""
       , registerEmail = ""
       , registerPassword = ""
       , loading = False
       , publishing = Nothing
+      , dashboardFilter = All
+      , deleteConfirm = Nothing
       }
     , Cmd.none
     )
+
+
+emptyCompose : ComposeModel
+emptyCompose =
+    { content = ""
+    , selectedAccount = Nothing
+    , scheduledAt = Nothing
+    , platform = "threads"
+    , mediaType = "TEXT"
+    , mediaUrl = Nothing
+    , aiPrompt = Nothing
+    , aiGenerating = False
+    }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -68,7 +77,7 @@ update msg model =
                         _ ->
                             Cmd.none
             in
-            ( { model | page = page }, cmd )
+            ( { model | page = page, error = Nothing, success = Nothing }, cmd )
 
         LoginEmail email ->
             ( { model | loginEmail = email }, Cmd.none )
@@ -189,14 +198,14 @@ update msg model =
                 compose =
                     model.compose
             in
-            ( { model | compose = { compose | selectedAccount = Just accountId } }, Cmd.none )
+            ( { model | compose = { compose | selectedAccount = if String.isEmpty accountId then Nothing else Just accountId } }, Cmd.none )
 
         UpdateComposeMediaType mediaType ->
             let
                 compose =
                     model.compose
             in
-            ( { model | compose = { compose | mediaType = mediaType } }, Cmd.none )
+            ( { model | compose = { compose | mediaType = mediaType, mediaUrl = Nothing } }, Cmd.none )
 
         UpdateComposeMediaUrl url ->
             let
@@ -254,7 +263,7 @@ update msg model =
                 cmd =
                     case compose.selectedAccount of
                         Just accountId ->
-                            Api.createPost model.token accountId compose.content compose.scheduledAt compose.platform PostCreated
+                            Api.createPost model.token accountId compose.content compose.platform compose.scheduledAt PostCreated
 
                         Nothing ->
                             Cmd.none
@@ -266,16 +275,8 @@ update msg model =
                 Ok _ ->
                     ( { model
                         | page = Dashboard
-                        , compose =
-                            { content = ""
-                            , selectedAccount = Nothing
-                            , scheduledAt = Nothing
-                            , platform = "threads"
-                            , mediaType = "TEXT"
-                            , mediaUrl = Nothing
-                            , aiPrompt = Nothing
-                            , aiGenerating = False
-                            }
+                        , compose = emptyCompose
+                        , success = Just "Post created successfully!"
                       }
                     , Api.getPosts model.token GotPosts
                     )
@@ -295,10 +296,25 @@ update msg model =
             in
             case result of
                 Ok _ ->
-                    ( newModel, Api.getPosts model.token GotPosts )
+                    ( { newModel | success = Just "Post published!" }
+                    , Api.getPosts model.token GotPosts
+                    )
 
                 Err _ ->
                     ( { newModel | error = Just "Failed to publish post. Check your account connection." }, Cmd.none )
+
+        DeletePost postId ->
+            ( model, Api.deletePost model.token postId PostDeleted )
+
+        PostDeleted result ->
+            case result of
+                Ok _ ->
+                    ( { model | deleteConfirm = Nothing, success = Just "Post deleted." }
+                    , Api.getPosts model.token GotPosts
+                    )
+
+                Err _ ->
+                    ( { model | error = Just "Failed to delete post" }, Cmd.none )
 
         ConnectAccount ->
             ( model, Api.connectAccount model.token GotOAuthUrl )
@@ -317,29 +333,30 @@ update msg model =
         AccountDeleted result ->
             case result of
                 Ok _ ->
-                    ( model, Api.getAccounts model.token GotAccounts )
+                    ( { model | success = Just "Account disconnected." }
+                    , Api.getAccounts model.token GotAccounts
+                    )
 
                 Err _ ->
                     ( { model | error = Just "Failed to delete account" }, Cmd.none )
 
+        SetDashboardFilter filter ->
+            ( { model | dashboardFilter = filter }, Cmd.none )
+
+        ShowDeleteConfirm postId ->
+            ( { model | deleteConfirm = Just postId }, Cmd.none )
+
+        HideDeleteConfirm ->
+            ( { model | deleteConfirm = Nothing }, Cmd.none )
+
         ClearCompose ->
-            ( { model
-                | compose =
-                    { content = ""
-                    , selectedAccount = Nothing
-                    , scheduledAt = Nothing
-                    , platform = "threads"
-                    , mediaType = "TEXT"
-                    , mediaUrl = Nothing
-                    , aiPrompt = Nothing
-                    , aiGenerating = False
-                    }
-              }
-            , Cmd.none
-            )
+            ( { model | compose = emptyCompose }, Cmd.none )
 
         DismissError ->
             ( { model | error = Nothing }, Cmd.none )
+
+        DismissSuccess ->
+            ( { model | success = Nothing }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -351,7 +368,7 @@ view : Model -> Html Msg
 view model =
     div [ class "app" ]
         [ viewNavbar model
-        , viewError model.error
+        , viewMessages model
         , viewPage model
         ]
 
@@ -366,8 +383,7 @@ viewNavbar model =
                 , navLink Composer "Composer"
                 , navLink Calendar "Calendar"
                 , navLink Accounts "Accounts"
-                , navLink Analytics "Analytics"
-                , a [ class "nav-link", onClick Logout ] [ text "Logout" ]
+                , a [ class "nav-link logout", onClick Logout ] [ text "Logout" ]
                 ]
 
           else
@@ -380,17 +396,28 @@ navLink page label =
     a [ class "nav-link", onClick (Navigate page) ] [ text label ]
 
 
-viewError : Maybe String -> Html Msg
-viewError error =
-    case error of
-        Just msg ->
-            div [ class "error-banner" ]
-                [ text msg
-                , button [ onClick DismissError ] [ text "x" ]
-                ]
+viewMessages : Model -> Html Msg
+viewMessages model =
+    div [ class "messages" ]
+        [ case model.error of
+            Just msg ->
+                div [ class "error-banner" ]
+                    [ span [] [ text msg ]
+                    , button [ onClick DismissError ] [ text "\u{00D7}" ]
+                    ]
 
-        Nothing ->
-            text ""
+            Nothing ->
+                text ""
+        , case model.success of
+            Just msg ->
+                div [ class "success-banner" ]
+                    [ span [] [ text msg ]
+                    , button [ onClick DismissSuccess ] [ text "\u{00D7}" ]
+                    ]
+
+            Nothing ->
+                text ""
+        ]
 
 
 viewPage : Model -> Html Msg
@@ -421,83 +448,181 @@ viewPage model =
 viewLogin : Model -> Html Msg
 viewLogin model =
     div [ class "page login-page" ]
-        [ h1 [] [ text "Poster" ]
-        , p [ class "subtitle" ] [ text "Marketing automation for Threads & Instagram" ]
-        , div [ class "login-form" ]
-            [ h2 [] [ text "Login" ]
-            , input
-                [ placeholder "Email"
-                , type_ "email"
-                , value model.loginEmail
-                , onInput LoginEmail
+        [ div [ class "login-card" ]
+            [ h1 [] [ text "Poster" ]
+            , p [ class "subtitle" ] [ text "Marketing automation for Threads & Instagram" ]
+            , div [ class "login-form" ]
+                [ h2 [] [ text "Login" ]
+                , input
+                    [ placeholder "Email"
+                    , type_ "email"
+                    , value model.loginEmail
+                    , onInput LoginEmail
+                    ]
+                    []
+                , input
+                    [ placeholder "Password"
+                    , type_ "password"
+                    , value model.loginPassword
+                    , onInput LoginPassword
+                    , onEnter DoLogin
+                    ]
+                    []
+                , button
+                    [ onClick DoLogin
+                    , disabled model.loading
+                    , class "btn-primary btn-full"
+                    ]
+                    [ text (if model.loading then "Logging in..." else "Login") ]
+                , div [ class "divider" ] [ text "or" ]
+                , h2 [] [ text "Register" ]
+                , input
+                    [ placeholder "Email"
+                    , type_ "email"
+                    , value model.registerEmail
+                    , onInput RegisterEmail
+                    ]
+                    []
+                , input
+                    [ placeholder "Password (min 8 characters)"
+                    , type_ "password"
+                    , value model.registerPassword
+                    , onInput RegisterPassword
+                    , onEnter DoRegister
+                    ]
+                    []
+                , button
+                    [ onClick DoRegister
+                    , disabled model.loading
+                    , class "btn-secondary btn-full"
+                    ]
+                    [ text (if model.loading then "Registering..." else "Register") ]
                 ]
-                []
-            , input
-                [ placeholder "Password"
-                , type_ "password"
-                , value model.loginPassword
-                , onInput LoginPassword
-                ]
-                []
-            , button
-                [ onClick DoLogin
-                , disabled model.loading
-                ]
-                [ text (if model.loading then "Logging in..." else "Login") ]
-            , div [ class "divider" ] [ text "or" ]
-            , h2 [] [ text "Register" ]
-            , input
-                [ placeholder "Email"
-                , type_ "email"
-                , value model.registerEmail
-                , onInput RegisterEmail
-                ]
-                []
-            , input
-                [ placeholder "Password (min 8 characters)"
-                , type_ "password"
-                , value model.registerPassword
-                , onInput RegisterPassword
-                ]
-                []
-            , button
-                [ onClick DoRegister
-                , disabled model.loading
-                ]
-                [ text (if model.loading then "Registering..." else "Register") ]
             ]
         ]
 
 
+onEnter : Msg -> Attribute Msg
+onEnter msg =
+    on "keydown"
+        (Decode.field "key" Decode.string
+            |> Decode.andThen
+                (\key ->
+                    if key == "Enter" then
+                        Decode.succeed msg
+
+                    else
+                        Decode.fail "not enter"
+                )
+        )
+
+
 viewDashboard : Model -> Html Msg
 viewDashboard model =
+    let
+        filteredPosts =
+            case model.dashboardFilter of
+                All ->
+                    model.posts
+
+                Drafts ->
+                    List.filter (\p -> p.status == "draft") model.posts
+
+                Scheduled ->
+                    List.filter (\p -> p.status == "scheduled") model.posts
+
+                Published ->
+                    List.filter (\p -> p.status == "published") model.posts
+
+                Failed ->
+                    List.filter (\p -> p.status == "failed") model.posts
+
+        postCount status =
+            List.length (List.filter (\p -> p.status == status) model.posts)
+    in
     div [ class "page" ]
         [ div [ class "page-header" ]
             [ h1 [] [ text "Dashboard" ]
             , button [ onClick (Navigate Composer), class "btn-primary" ] [ text "+ New Post" ]
             ]
-        , if List.isEmpty model.posts then
+        , div [ class "filter-tabs" ]
+            [ filterTab All "All" (List.length model.posts) model.dashboardFilter
+            , filterTab Drafts "Drafts" (postCount "draft") model.dashboardFilter
+            , filterTab Scheduled "Scheduled" (postCount "scheduled") model.dashboardFilter
+            , filterTab Published "Published" (postCount "published") model.dashboardFilter
+            , filterTab Failed "Failed" (postCount "failed") model.dashboardFilter
+            ]
+        , if List.isEmpty filteredPosts then
             div [ class "empty-state" ]
-                [ p [] [ text "No posts yet." ]
-                , button [ onClick (Navigate Composer), class "btn-primary" ] [ text "Create your first post" ]
+                [ text
+                    (if List.isEmpty model.posts then
+                        "No posts yet."
+
+                     else
+                        "No posts matching this filter."
+                    )
                 ]
 
           else
             div [ class "posts-list" ]
-                (List.map (viewPostCard model.publishing) model.posts)
+                (List.map (viewPostCard model) filteredPosts)
         ]
 
 
-viewPostCard : Maybe String -> Post -> Html Msg
-viewPostCard publishing post =
+filterTab : PostFilter -> String -> Int -> PostFilter -> Html Msg
+filterTab filter label count currentFilter =
+    button
+        [ class
+            (if filter == currentFilter then
+                "filter-tab active"
+
+             else
+                "filter-tab"
+            )
+        , onClick (SetDashboardFilter filter)
+        ]
+        [ text (label ++ " (" ++ String.fromInt count ++ ")") ]
+
+
+viewPostCard : Model -> Post -> Html Msg
+viewPostCard model post =
     let
         isPublishing =
-            publishing == Just post.id
+            model.publishing == Just post.id
+
+        isDeleting =
+            model.deleteConfirm == Just post.id
     in
-    div [ class ("post-card " ++ post.status) ]
+    div [ class ("post-card status-" ++ post.status) ]
         [ div [ class "post-header" ]
-            [ span [ class ("status-badge status-" ++ post.status) ] [ text post.status ]
-            , span [ class "platform-badge" ] [ text post.platform ]
+            [ div [ class "post-badges" ]
+                [ span [ class ("status-badge status-" ++ post.status) ] [ text post.status ]
+                , span [ class "platform-badge" ] [ text post.platform ]
+                ]
+            , div [ class "post-actions-top" ]
+                [ if post.status == "draft" || post.status == "scheduled" then
+                    button
+                        [ onClick (PublishPost post.id)
+                        , disabled isPublishing
+                        , class "btn-primary btn-sm"
+                        ]
+                        [ text
+                            (if isPublishing then
+                                "Publishing..."
+
+                             else
+                                "Publish"
+                            )
+                        ]
+
+                  else
+                    text ""
+                , button
+                    [ onClick (ShowDeleteConfirm post.id)
+                    , class "btn-ghost btn-sm"
+                    ]
+                    [ text "Delete" ]
+                ]
             ]
         , div [ class "post-content" ] [ text post.content ]
         , case post.mediaUrl of
@@ -511,52 +636,51 @@ viewPostCard publishing post =
         , div [ class "post-meta" ]
             [ case post.scheduledAt of
                 Just scheduled ->
-                    div [] [ text ("Scheduled: " ++ scheduled) ]
+                    span [] [ text ("Scheduled: " ++ formatDateTime scheduled) ]
 
                 Nothing ->
                     text ""
             , case post.publishedAt of
                 Just published ->
-                    div [] [ text ("Published: " ++ published) ]
+                    span [] [ text ("Published: " ++ formatDateTime published) ]
 
                 Nothing ->
                     text ""
             ]
-        , div [ class "post-actions" ]
-            [ if post.status == "draft" || post.status == "scheduled" then
-                button
-                    [ onClick (PublishPost post.id)
-                    , disabled isPublishing
-                    , class "btn-primary"
-                    ]
-                    [ text
-                        (if isPublishing then
-                            "Publishing..."
+        , if isDeleting then
+            div [ class "delete-confirm" ]
+                [ span [] [ text "Delete this post?" ]
+                , button [ onClick (DeletePost post.id), class "btn-danger btn-sm" ] [ text "Yes, delete" ]
+                , button [ onClick HideDeleteConfirm, class "btn-ghost btn-sm" ] [ text "Cancel" ]
+                ]
 
-                         else
-                            "Publish Now"
-                        )
-                    ]
-
-              else
-                text ""
-            ]
+          else
+            text ""
         ]
+
+
+formatDateTime : String -> String
+formatDateTime dt =
+    String.left 16 dt
 
 
 viewAccounts : Model -> Html Msg
 viewAccounts model =
     div [ class "page" ]
-        [ h1 [] [ text "Accounts" ]
-        , button [ onClick ConnectAccount, class "btn-primary" ] [ text "+ Connect Instagram / Threads" ]
+        [ div [ class "page-header" ]
+            [ h1 [] [ text "Accounts" ]
+            , button [ onClick ConnectAccount, class "btn-primary" ] [ text "+ Connect" ]
+            ]
         , if List.isEmpty model.accounts then
             div [ class "empty-state" ]
-                [ p [] [ text "No accounts connected." ]
+                [ div [ class "empty-icon" ] [ text "\u{1F4F1}" ]
+                , h3 [] [ text "No accounts connected" ]
                 , p [] [ text "Connect your Instagram Business account to start posting." ]
+                , button [ onClick ConnectAccount, class "btn-primary" ] [ text "Connect Instagram / Threads" ]
                 ]
 
           else
-            div [ class "accounts-list" ]
+            div [ class "accounts-grid" ]
                 (List.map viewAccountCard model.accounts)
         ]
 
@@ -564,26 +688,35 @@ viewAccounts model =
 viewAccountCard : Account -> Html Msg
 viewAccountCard account =
     div [ class "account-card" ]
-        [ div [ class "account-header" ]
-            [ div [ class "account-info" ]
-                [ div [ class "account-username" ] [ text account.username ]
-                , div [ class "account-provider" ] [ text account.provider ]
-                ]
-            , button
-                [ class "btn-danger"
-                , onClick (DeleteAccount account.id)
-                ]
-                [ text "Disconnect" ]
+        [ div [ class "account-icon" ]
+            [ text
+                (if account.provider == "instagram" then
+                    "\u{1F4F7}"
+
+                 else
+                    "\u{1F4AC}"
+                )
             ]
-        , div [ class "account-details" ]
-            [ div [] [ text ("User ID: " ++ account.providerUserId) ]
-            , case account.tokenExpiresAt of
+        , div [ class "account-info" ]
+            [ div [ class "account-username" ] [ text account.username ]
+            , div [ class "account-provider" ] [ text account.provider ]
+            ]
+        , div [ class "account-meta" ]
+            [ case account.tokenExpiresAt of
                 Just expires ->
-                    div [] [ text ("Token expires: " ++ expires) ]
+                    div [ class "token-status" ]
+                        [ span [ class "token-dot valid" ] []
+                        , text ("Expires: " ++ formatDateTime expires)
+                        ]
 
                 Nothing ->
                     text ""
             ]
+        , button
+            [ class "btn-ghost btn-sm"
+            , onClick (DeleteAccount account.id)
+            ]
+            [ text "Disconnect" ]
         ]
 
 
@@ -592,111 +725,157 @@ viewComposer model =
     let
         compose =
             model.compose
+
+        canSubmit =
+            compose.selectedAccount /= Nothing && not (String.isEmpty compose.content)
     in
     div [ class "page" ]
         [ div [ class "page-header" ]
             [ h1 [] [ text "Compose Post" ]
-            , button [ onClick ClearCompose, class "btn-secondary" ] [ text "Clear" ]
+            , button [ onClick ClearCompose, class "btn-ghost" ] [ text "Clear" ]
             ]
-        , div [ class "composer" ]
-            [ if List.isEmpty model.accounts then
-                div [ class "warning" ]
-                    [ text "Connect an account first in the "
-                    , a [ onClick (Navigate Accounts) ] [ text "Accounts" ]
-                    , text " page."
-                    ]
+        , div [ class "composer-layout" ]
+            [ div [ class "composer-main" ]
+                [ if List.isEmpty model.accounts then
+                    div [ class "warning-banner" ]
+                        [ text "Connect an account first in the "
+                        , a [ onClick (Navigate Accounts) ] [ text "Accounts page" ]
+                        , text "."
+                        ]
 
-              else
-                div [ class "form-group" ]
-                    [ label [] [ text "Account" ]
-                    , select [ onInput UpdateComposeAccount ]
-                        (option [ value "" ] [ text "Select account..." ]
-                            :: List.map
-                                (\a ->
-                                    option [ value a.id ]
-                                        [ text (a.username ++ " (" ++ a.provider ++ ")") ]
+                  else
+                    div [ class "form-group" ]
+                        [ label [] [ text "Account" ]
+                        , select [ onInput UpdateComposeAccount ]
+                            (option [ value "" ] [ text "Select account..." ]
+                                :: List.map
+                                    (\a ->
+                                        option
+                                            [ value a.id
+                                            , selected (compose.selectedAccount == Just a.id)
+                                            ]
+                                            [ text (a.username ++ " (" ++ a.provider ++ ")") ]
+                                    )
+                                    model.accounts
+                            )
+                        ]
+                , div [ class "form-row" ]
+                    [ div [ class "form-group" ]
+                        [ label [] [ text "Platform" ]
+                        , select [ onInput UpdateComposePlatform ]
+                            [ option [ value "threads", selected (compose.platform == "threads") ] [ text "Threads" ]
+                            , option [ value "instagram", selected (compose.platform == "instagram") ] [ text "Instagram" ]
+                            ]
+                        ]
+                    , div [ class "form-group" ]
+                        [ label [] [ text "Media Type" ]
+                        , select [ onInput UpdateComposeMediaType ]
+                            [ option [ value "TEXT", selected (compose.mediaType == "TEXT") ] [ text "Text Only" ]
+                            , option [ value "IMAGE", selected (compose.mediaType == "IMAGE") ] [ text "Image" ]
+                            , option [ value "VIDEO", selected (compose.mediaType == "VIDEO") ] [ text "Video" ]
+                            ]
+                        ]
+                    ]
+                , div [ class "form-group" ]
+                    [ label [] [ text "Content" ]
+                    , textarea
+                        [ placeholder "What's on your mind?"
+                        , value compose.content
+                        , onInput UpdateComposeContent
+                        , class "composer-textarea"
+                        ]
+                        []
+                    , div [ class "char-count" ]
+                        [ text
+                            (String.fromInt (String.length compose.content)
+                                ++ "/500"
+                            )
+                        ]
+                    ]
+                , case compose.mediaType of
+                    "IMAGE" ->
+                        div [ class "form-group" ]
+                            [ label [] [ text "Image URL" ]
+                            , input
+                                [ placeholder "https://example.com/image.jpg"
+                                , onInput UpdateComposeMediaUrl
+                                , value (compose.mediaUrl |> Maybe.withDefault "")
+                                ]
+                                []
+                            ]
+
+                    "VIDEO" ->
+                        div [ class "form-group" ]
+                            [ label [] [ text "Video URL" ]
+                            , input
+                                [ placeholder "https://example.com/video.mp4"
+                                , onInput UpdateComposeMediaUrl
+                                , value (compose.mediaUrl |> Maybe.withDefault "")
+                                ]
+                                []
+                            ]
+
+                    _ ->
+                        text ""
+                , div [ class "form-group" ]
+                    [ label [] [ text "Schedule (optional)" ]
+                    , input
+                        [ type_ "datetime-local"
+                        , onInput (\v -> UpdateComposeSchedule (if String.isEmpty v then Nothing else Just v))
+                        ]
+                        []
+                    ]
+                , div [ class "composer-actions" ]
+                    [ button
+                        [ onClick CreatePost
+                        , disabled (not canSubmit)
+                        , class "btn-primary"
+                        ]
+                        [ text "Save Draft" ]
+                    ]
+                ]
+            , div [ class "composer-sidebar" ]
+                [ div [ class "ai-section" ]
+                    [ h3 [] [ text "AI Assistant" ]
+                    , p [ class "ai-hint" ] [ text "Describe what you want to write about" ]
+                    , textarea
+                        [ placeholder "e.g. Write a post about our new product launch..."
+                        , onInput UpdateAiPrompt
+                        , value (compose.aiPrompt |> Maybe.withDefault "")
+                        , class "ai-input"
+                        ]
+                        []
+                    , button
+                        [ onClick GenerateContent
+                        , disabled compose.aiGenerating
+                        , class "btn-secondary btn-full"
+                        ]
+                        [ text
+                            (if compose.aiGenerating then
+                                "Generating..."
+
+                             else
+                                "Generate with AI"
+                            )
+                        ]
+                    ]
+                , div [ class "preview-section" ]
+                    [ h3 [] [ text "Preview" ]
+                    , div [ class "post-preview" ]
+                        [ div [ class "preview-content" ]
+                            [ text
+                                (if String.isEmpty compose.content then
+                                    "Your post content will appear here..."
+
+                                 else
+                                    compose.content
                                 )
-                                model.accounts
-                        )
-                    ]
-            , div [ class "form-group" ]
-                [ label [] [ text "Platform" ]
-                , select [ onInput UpdateComposePlatform ]
-                    [ option [ value "threads", selected (compose.platform == "threads") ] [ text "Threads" ]
-                    , option [ value "instagram", selected (compose.platform == "instagram") ] [ text "Instagram" ]
-                    ]
-                ]
-            , div [ class "form-group" ]
-                [ label [] [ text "Content" ]
-                , textarea
-                    [ placeholder "What's on your mind?"
-                    , value compose.content
-                    , onInput UpdateComposeContent
-                    ]
-                    []
-                , div [ class "char-count" ]
-                    [ text (String.fromInt (String.length compose.content) ++ "/500 characters") ]
-                ]
-            , div [ class "form-group" ]
-                [ label [] [ text "Media Type" ]
-                , select [ onInput UpdateComposeMediaType ]
-                    [ option [ value "TEXT", selected (compose.mediaType == "TEXT") ] [ text "Text Only" ]
-                    , option [ value "IMAGE", selected (compose.mediaType == "IMAGE") ] [ text "Image" ]
-                    , option [ value "VIDEO", selected (compose.mediaType == "VIDEO") ] [ text "Video" ]
-                    ]
-                ]
-            , case compose.mediaType of
-                "IMAGE" ->
-                    div [ class "form-group" ]
-                        [ label [] [ text "Image URL" ]
-                        , input
-                            [ placeholder "https://example.com/image.jpg"
-                            , onInput UpdateComposeMediaUrl
                             ]
-                            []
-                        ]
-
-                "VIDEO" ->
-                    div [ class "form-group" ]
-                        [ label [] [ text "Video URL" ]
-                        , input
-                            [ placeholder "https://example.com/video.mp4"
-                            , onInput UpdateComposeMediaUrl
+                        , div [ class "preview-meta" ]
+                            [ span [] [ text compose.platform ]
                             ]
-                            []
                         ]
-
-                _ ->
-                    text ""
-            , div [ class "form-group" ]
-                [ label [] [ text "Schedule (optional)" ]
-                , input
-                    [ type_ "datetime-local"
-                    , onInput (\v -> UpdateComposeSchedule (if String.isEmpty v then Nothing else Just v))
                     ]
-                    []
-                ]
-            , div [ class "composer-actions" ]
-                [ button
-                    [ onClick CreatePost
-                    , disabled (compose.selectedAccount == Nothing || String.isEmpty compose.content)
-                    , class "btn-primary"
-                    ]
-                    [ text "Save Draft" ]
-                ]
-            , div [ class "ai-section" ]
-                [ h3 [] [ text "AI Assistant" ]
-                , input
-                    [ placeholder "Describe what to write about..."
-                    , onInput UpdateAiPrompt
-                    ]
-                    []
-                , button
-                    [ onClick GenerateContent
-                    , disabled compose.aiGenerating
-                    , class "btn-secondary"
-                    ]
-                    [ text (if compose.aiGenerating then "Generating..." else "Generate with AI") ]
                 ]
             ]
         ]
@@ -705,12 +884,16 @@ viewComposer model =
 viewCalendar : Model -> Html Msg
 viewCalendar model =
     div [ class "page" ]
-        [ h1 [] [ text "Content Calendar" ]
+        [ div [ class "page-header" ]
+            [ h1 [] [ text "Content Calendar" ]
+            , button [ onClick (Navigate Composer), class "btn-primary" ] [ text "+ New Post" ]
+            ]
         , if List.isEmpty model.calendar then
-            p [] [ text "No scheduled posts." ]
+            div [ class "empty-state" ]
+                [ text "No scheduled posts." ]
 
           else
-            div [ class "calendar" ]
+            div [ class "calendar-grid" ]
                 (List.map viewCalendarDay model.calendar)
         ]
 
@@ -718,9 +901,29 @@ viewCalendar model =
 viewCalendarDay : CalendarDay -> Html Msg
 viewCalendarDay day =
     div [ class "calendar-day" ]
-        [ h3 [] [ text day.date ]
+        [ div [ class "calendar-date" ] [ text day.date ]
         , div [ class "calendar-posts" ]
-            (List.map (viewPostCard Nothing) day.posts)
+            (List.map viewCalendarPost day.posts)
+        ]
+
+
+viewCalendarPost : Post -> Html Msg
+viewCalendarPost post =
+    div [ class ("calendar-post status-" ++ post.status) ]
+        [ div [ class "calendar-post-time" ]
+            [ text
+                (case post.scheduledAt of
+                    Just t ->
+                        String.slice 11 16 t
+
+                    Nothing ->
+                        ""
+                )
+            ]
+        , div [ class "calendar-post-content" ] [ text (String.left 50 post.content) ]
+        , div [ class "calendar-post-meta" ]
+            [ span [ class "platform-badge" ] [ text post.platform ]
+            ]
         ]
 
 
@@ -728,7 +931,8 @@ viewAnalytics : Html Msg
 viewAnalytics =
     div [ class "page" ]
         [ h1 [] [ text "Analytics" ]
-        , p [] [ text "Connect an account to see analytics." ]
+        , div [ class "empty-state" ]
+            [ text "Analytics coming soon. Connect an account to see insights." ]
         ]
 
 
@@ -736,5 +940,6 @@ viewSettings : Html Msg
 viewSettings =
     div [ class "page" ]
         [ h1 [] [ text "Settings" ]
-        , p [] [ text "Settings coming soon." ]
+        , div [ class "empty-state" ]
+            [ text "Settings coming soon." ]
         ]
