@@ -1,7 +1,8 @@
-use axum::{middleware, routing::delete, routing::get, routing::post, routing::put, Router};
+use axum::{middleware, routing::delete, routing::get, routing::post, routing::put, Json, Router};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
+use tracing_subscriber::EnvFilter;
 
 use poster_core::accounts;
 use poster_core::auth;
@@ -12,9 +13,31 @@ use poster_core::premium;
 use poster_core::scheduler;
 use poster_core::AppState;
 
+async fn health(axum::extract::State(state): axum::extract::State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let db_ok = sqlx::query("SELECT 1")
+        .execute(&state.db)
+        .await
+        .is_ok();
+
+    let status = if db_ok { "healthy" } else { "degraded" };
+
+    Json(serde_json::json!({
+        "status": status,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "database": if db_ok { "connected" } else { "disconnected" }
+    }))
+}
+
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info"))
+        )
+        .json()
+        .init();
+
     dotenvy::dotenv().ok();
 
     let config = config::Config::from_env();
@@ -43,6 +66,7 @@ async fn main() {
         .allow_headers(Any);
 
     let public_routes = Router::new()
+        .route("/health", get(health))
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login));
 

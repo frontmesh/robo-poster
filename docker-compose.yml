@@ -9,6 +9,11 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U poster"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: .
@@ -16,14 +21,22 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: postgres://poster:poster@db:5432/poster
-      JWT_SECRET: change-me-in-production
-      META_APP_ID: your-meta-app-id
-      META_APP_SECRET: your-meta-app-secret
-      META_REDIRECT_URI: http://localhost:3000/api/accounts/callback
-      PREMIUM_API_URL: http://localhost:3001
-      PREMIUM_API_KEY: your-premium-api-key
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      META_APP_ID: ${META_APP_ID:-your-meta-app-id}
+      META_APP_SECRET: ${META_APP_SECRET:-your-meta-app-secret}
+      META_REDIRECT_URI: ${META_REDIRECT_URI:-http://localhost:3000/api/accounts/callback}
+      PREMIUM_API_URL: ${PREMIUM_API_URL:-http://localhost:3001}
+      PREMIUM_API_KEY: ${PREMIUM_API_KEY:-your-premium-api-key}
+      RUST_LOG: ${RUST_LOG:-info}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   pgdata:
