@@ -78,13 +78,22 @@ pub async fn list(
 )]
 pub async fn connect(
     State(state): State<std::sync::Arc<AppState>>,
+    auth: AuthUser,
 ) -> Result<Json<OAuthUrl>, AppError> {
     let scopes = "instagram_basic,instagram_content_publish,instagram_manage_insights,threads_basic,threads_content_publish,threads_manage_insights";
+
+    let state_token = Uuid::new_v4().to_string();
+
+    state.oauth_states.lock()
+        .map_err(|_| AppError::Internal("Failed to lock oauth states".to_string()))?
+        .insert(state_token.clone(), auth.user_id);
+
     let url = format!(
-        "https://www.facebook.com/v19.0/dialog/oauth?client_id={}&redirect_uri={}&scope={}&response_type=code&state=poster",
+        "https://www.facebook.com/v19.0/dialog/oauth?client_id={}&redirect_uri={}&scope={}&response_type=code&state={}",
         state.config.meta_app_id,
         state.config.meta_redirect_uri,
-        scopes
+        scopes,
+        state_token
     );
 
     Ok(Json(OAuthUrl { url }))
@@ -103,15 +112,22 @@ pub struct CallbackParams {
     params(("code" = String, Query, description = "OAuth authorization code")),
     responses(
         (status = 200, description = "Account connected"),
-        (status = 400, description = "Invalid code"),
+        (status = 400, description = "Invalid code or state"),
         (status = 502, description = "Meta API error")
     )
 )]
 pub async fn callback(
     State(state): State<std::sync::Arc<AppState>>,
-    auth: AuthUser,
     axum::extract::Query(params): axum::extract::Query<CallbackParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let state_token = params.state
+        .ok_or_else(|| AppError::BadRequest("Missing state parameter".to_string()))?;
+
+    let user_id = state.oauth_states.lock()
+        .map_err(|_| AppError::Internal("Failed to lock oauth states".to_string()))?
+        .remove(&state_token)
+        .ok_or_else(|| AppError::BadRequest("Invalid or expired state parameter".to_string()))?;
+
     let client = reqwest::Client::new();
 
     let token_resp = client
@@ -228,7 +244,7 @@ pub async fn callback(
         let existing = sqlx::query_as::<_, crate::db::Account>(
             "SELECT * FROM accounts WHERE user_id = $1 AND provider_user_id = $2",
         )
-        .bind(auth.user_id)
+        .bind(user_id)
         .bind(ig_id)
         .fetch_optional(&state.db)
         .await?;
@@ -255,7 +271,7 @@ pub async fn callback(
                 "INSERT INTO accounts (id, user_id, provider, provider_user_id, username, access_token, refresh_token, token_expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
             )
             .bind(account_id)
-            .bind(auth.user_id)
+            .bind(user_id)
             .bind("instagram")
             .bind(ig_id)
             .bind(ig_username)
@@ -286,7 +302,7 @@ pub async fn callback(
             let existing = sqlx::query_as::<_, crate::db::Account>(
                 "SELECT * FROM accounts WHERE user_id = $1 AND provider_user_id = $2",
             )
-            .bind(auth.user_id)
+            .bind(user_id)
             .bind(threads_id)
             .fetch_optional(&state.db)
             .await?;
@@ -313,7 +329,7 @@ pub async fn callback(
                     "INSERT INTO accounts (id, user_id, provider, provider_user_id, username, access_token, refresh_token, token_expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                 )
                 .bind(account_id)
-                .bind(auth.user_id)
+                .bind(user_id)
                 .bind("threads")
                 .bind(threads_id)
                 .bind(threads_username)

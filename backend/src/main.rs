@@ -10,7 +10,6 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use poster_core::accounts;
 use poster_core::auth;
-use poster_core::auth::middleware::AuthUser;
 use poster_core::config;
 use poster_core::posts;
 use poster_core::premium;
@@ -103,10 +102,7 @@ async fn main() {
         .await
         .expect("Failed to run migrations");
 
-    let state = Arc::new(AppState {
-        db: pool.clone(),
-        config: config.clone(),
-    });
+    let state = Arc::new(AppState::new(pool.clone(), config.clone()));
 
     tokio::spawn(scheduler::run_scheduler(pool.clone()));
 
