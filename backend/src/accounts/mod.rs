@@ -2,21 +2,44 @@ use axum::{extract::{State, Path}, Json};
 use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use utoipa::ToSchema;
 
 use crate::auth::middleware::AuthUser;
 use crate::error::AppError;
 use crate::AppState;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct AccountResponse {
+    /// Account ID
     pub id: Uuid,
+    /// Provider (instagram or threads)
     pub provider: String,
+    /// Provider user ID
     pub provider_user_id: String,
+    /// Username on the platform
     pub username: String,
+    /// Token expiry time
     pub token_expires_at: Option<DateTime<Utc>>,
+    /// Account creation time
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct OAuthUrl {
+    /// OAuth authorization URL
+    pub url: String,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/accounts",
+    tag = "accounts",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "List of connected accounts", body = Vec<AccountResponse>),
+        (status = 401, description = "Unauthorized")
+    )
+)]
 pub async fn list(
     State(state): State<std::sync::Arc<AppState>>,
     auth: AuthUser,
@@ -43,11 +66,16 @@ pub async fn list(
     Ok(Json(response))
 }
 
-#[derive(Serialize)]
-pub struct OAuthUrl {
-    pub url: String,
-}
-
+#[utoipa::path(
+    post,
+    path = "/api/accounts/connect",
+    tag = "accounts",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "OAuth URL for account connection", body = OAuthUrl),
+        (status = 401, description = "Unauthorized")
+    )
+)]
 pub async fn connect(
     State(state): State<std::sync::Arc<AppState>>,
 ) -> Result<Json<OAuthUrl>, AppError> {
@@ -68,6 +96,17 @@ pub struct CallbackParams {
     pub state: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/accounts/callback",
+    tag = "accounts",
+    params(("code" = String, Query, description = "OAuth authorization code")),
+    responses(
+        (status = 200, description = "Account connected"),
+        (status = 400, description = "Invalid code"),
+        (status = 502, description = "Meta API error")
+    )
+)]
 pub async fn callback(
     State(state): State<std::sync::Arc<AppState>>,
     auth: AuthUser,
@@ -75,7 +114,6 @@ pub async fn callback(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let client = reqwest::Client::new();
 
-    // Step 1: Exchange code for short-lived token
     let token_resp = client
         .post("https://graph.facebook.com/v19.0/oauth/access_token")
         .form(&[
@@ -103,7 +141,6 @@ pub async fn callback(
         .as_str()
         .ok_or_else(|| AppError::MetaApi("No access token in response".to_string()))?;
 
-    // Step 2: Exchange for long-lived token (60 days)
     let long_lived = client
         .get("https://graph.facebook.com/v19.0/oauth/access_token")
         .query(&[
@@ -125,7 +162,6 @@ pub async fn callback(
         .as_str()
         .unwrap_or(access_token);
 
-    // Step 3: Get user info from Facebook
     let user_resp = client
         .get("https://graph.facebook.com/v19.0/me")
         .query(&[
@@ -145,7 +181,6 @@ pub async fn callback(
         .as_str()
         .ok_or_else(|| AppError::MetaApi("No user ID".to_string()))?;
 
-    // Step 4: Get Instagram business accounts connected to this Facebook user
     let ig_resp = client
         .get(format!("https://graph.facebook.com/v19.0/{}/instagram_business_accounts", fb_user_id))
         .query(&[("access_token", long_token)])
@@ -160,15 +195,14 @@ pub async fn callback(
 
     let ig_accounts = ig_data["data"]
         .as_array()
-        .ok_or_else(|| AppError::MetaApi("No Instagram accounts found. Make sure you have an Instagram Business account connected to your Facebook page.".to_string()))?;
+        .ok_or_else(|| AppError::MetaApi("No Instagram accounts found".to_string()))?;
 
     if ig_accounts.is_empty() {
         return Err(AppError::MetaApi(
-            "No Instagram Business accounts found. Please connect an Instagram Business account to your Facebook page first.".to_string(),
+            "No Instagram Business accounts found".to_string(),
         ));
     }
 
-    // Step 5: Get Threads profiles
     let threads_resp = client
         .get(format!("https://graph.facebook.com/v19.0/{}/threads_profiles", fb_user_id))
         .query(&[("access_token", long_token)])
@@ -181,10 +215,8 @@ pub async fn callback(
         .await
         .map_err(|e| AppError::MetaApi(e.to_string()))?;
 
-    // Step 6: Store accounts
     let mut connected_accounts = Vec::new();
 
-    // Store Instagram accounts
     for ig_account in ig_accounts {
         let ig_id = ig_account["id"].as_str().unwrap_or("");
         let ig_username = ig_account["username"].as_str().unwrap_or("");
@@ -193,7 +225,6 @@ pub async fn callback(
             continue;
         }
 
-        // Check if account already exists for this user
         let existing = sqlx::query_as::<_, crate::db::Account>(
             "SELECT * FROM accounts WHERE user_id = $1 AND provider_user_id = $2",
         )
@@ -203,7 +234,6 @@ pub async fn callback(
         .await?;
 
         if let Some(existing) = existing {
-            // Update token
             sqlx::query(
                 "UPDATE accounts SET access_token = $1, token_expires_at = $2 WHERE id = $3",
             )
@@ -244,7 +274,6 @@ pub async fn callback(
         }
     }
 
-    // Store Threads accounts
     if let Some(threads_array) = threads_data["data"].as_array() {
         for threads_account in threads_array {
             let threads_id = threads_account["id"].as_str().unwrap_or("");
@@ -310,6 +339,18 @@ pub async fn callback(
     })))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/accounts/{id}",
+    tag = "accounts",
+    security(("bearer_auth" = [])),
+    params(("id" = Uuid, Path, description = "Account ID")),
+    responses(
+        (status = 200, description = "Account deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Account not found")
+    )
+)]
 pub async fn delete(
     State(state): State<std::sync::Arc<AppState>>,
     auth: AuthUser,

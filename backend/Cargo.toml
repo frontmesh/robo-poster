@@ -22,6 +22,9 @@ url = "2"
 blake3 = "1"
 hmac = "0.12"
 sha2 = "0.10"
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-axum = "0.2"
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

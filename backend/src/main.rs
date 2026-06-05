@@ -1,17 +1,67 @@
-use axum::{middleware, routing::delete, routing::get, routing::post, routing::put, Json, Router};
+use axum::{middleware, routing::get, routing::post, Json, Router};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::EnvFilter;
+use utoipa::OpenApi;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
+use utoipa_swagger_ui::SwaggerUi;
 
 use poster_core::accounts;
 use poster_core::auth;
+use poster_core::auth::middleware::AuthUser;
 use poster_core::config;
-use poster_core::meta;
 use poster_core::posts;
 use poster_core::premium;
 use poster_core::scheduler;
 use poster_core::AppState;
+
+#[derive(OpenApi)]
+#[openapi(
+    info(
+        title = "Poster API",
+        version = "1.0.0",
+        description = "Marketing automation API for Threads & Instagram"
+    ),
+    paths(
+        auth::register,
+        auth::login,
+        accounts::list,
+        accounts::connect,
+        accounts::callback,
+        accounts::delete,
+        posts::list,
+        posts::create,
+        posts::update,
+        posts::delete,
+        posts::publish,
+        posts::calendar,
+        premium::generate_content,
+        premium::get_analytics,
+    ),
+    components(schemas(
+        auth::RegisterRequest,
+        auth::LoginRequest,
+        auth::AuthResponse,
+        accounts::AccountResponse,
+        accounts::OAuthUrl,
+        posts::CreatePostRequest,
+        posts::UpdatePostRequest,
+        posts::PostResponse,
+        posts::CalendarDay,
+        premium::GenerateRequest,
+        premium::GenerateResponse,
+        premium::AnalyticsResponse,
+    )),
+    tags(
+        (name = "auth", description = "Authentication endpoints"),
+        (name = "accounts", description = "Account management"),
+        (name = "posts", description = "Post management"),
+        (name = "premium", description = "Premium features (AI, analytics)")
+    )
+)]
+struct ApiDoc;
 
 async fn health(axum::extract::State(state): axum::extract::State<Arc<AppState>>) -> Json<serde_json::Value> {
     let db_ok = sqlx::query("SELECT 1")
@@ -65,32 +115,32 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let public_routes = Router::new()
+    let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .route("/health", get(health))
-        .route("/api/auth/register", post(auth::register))
-        .route("/api/auth/login", post(auth::login));
+        .routes(routes!(auth::register, auth::login))
+        .routes(routes!(
+            accounts::list,
+            accounts::connect,
+            accounts::callback,
+            accounts::delete,
+        ))
+        .routes(routes!(
+            posts::list,
+            posts::create,
+            posts::update,
+            posts::delete,
+            posts::publish,
+            posts::calendar,
+        ))
+        .routes(routes!(
+            premium::generate_content,
+            premium::get_analytics,
+        ))
+        .layer(middleware::from_fn(auth::middleware::auth_middleware))
+        .split_for_parts();
 
-    let protected_routes = Router::new()
-        .route("/api/accounts", get(accounts::list))
-        .route("/api/accounts/connect", post(accounts::connect))
-        .route("/api/accounts/callback", get(accounts::callback))
-        .route("/api/accounts/{id}", delete(accounts::delete))
-        .route("/api/posts", get(posts::list).post(posts::create))
-        .route(
-            "/api/posts/{id}",
-            put(posts::update).delete(posts::delete),
-        )
-        .route("/api/posts/{id}/publish", post(posts::publish))
-        .route("/api/calendar", get(posts::calendar))
-        .route("/api/ai/generate", post(premium::generate_content))
-        .route(
-            "/api/analytics/{account_id}",
-            get(premium::get_analytics),
-        )
-        .layer(middleware::from_fn(auth::middleware::auth_middleware));
-
-    let app = public_routes
-        .merge(protected_routes)
+    let app = router
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
         .layer(cors)
         .with_state(state);
 
@@ -99,5 +149,6 @@ async fn main() {
         .unwrap();
 
     tracing::info!("Server running on port 3000");
+    tracing::info!("Swagger UI at http://localhost:3000/swagger-ui");
     axum::serve(listener, app).await.unwrap();
 }

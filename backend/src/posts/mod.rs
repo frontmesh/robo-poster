@@ -2,40 +2,76 @@ use axum::{extract::{Path, State}, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use utoipa::ToSchema;
 
 use crate::auth::middleware::AuthUser;
 use crate::error::AppError;
 use crate::AppState;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreatePostRequest {
+    /// Account ID to post from
     pub account_id: Uuid,
+    /// Post content text
     pub content: String,
+    /// Optional media URL (image or video)
     pub media_url: Option<String>,
+    /// Media type: TEXT, IMAGE, or VIDEO
     pub media_type: Option<String>,
+    /// Optional scheduled time (ISO 8601)
     pub scheduled_at: Option<DateTime<Utc>>,
+    /// Platform: threads or instagram
     pub platform: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct UpdatePostRequest {
+    /// Updated content
     pub content: Option<String>,
+    /// Updated media URL
     pub media_url: Option<String>,
+    /// Updated scheduled time
     pub scheduled_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct PostResponse {
+    /// Post ID
     pub id: Uuid,
+    /// Post content
     pub content: String,
+    /// Media URL if any
     pub media_url: Option<String>,
+    /// Scheduled time if any
     pub scheduled_at: Option<DateTime<Utc>>,
+    /// Published time if published
     pub published_at: Option<DateTime<Utc>>,
+    /// Post status: draft, scheduled, published, failed
     pub status: String,
+    /// Platform: threads or instagram
     pub platform: String,
+    /// Account ID
     pub account_id: Uuid,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct CalendarDay {
+    /// Date string (YYYY-MM-DD)
+    pub date: String,
+    /// Posts scheduled for this day
+    pub posts: Vec<PostResponse>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/posts",
+    tag = "posts",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "List of posts", body = Vec<PostResponse>),
+        (status = 401, description = "Unauthorized")
+    )
+)]
 pub async fn list(
     State(state): State<std::sync::Arc<AppState>>,
     auth: AuthUser,
@@ -67,12 +103,24 @@ pub async fn list(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/posts",
+    tag = "posts",
+    security(("bearer_auth" = [])),
+    request_body = CreatePostRequest,
+    responses(
+        (status = 200, description = "Post created", body = PostResponse),
+        (status = 400, description = "Invalid input"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Account not found")
+    )
+)]
 pub async fn create(
     State(state): State<std::sync::Arc<AppState>>,
     auth: AuthUser,
     Json(req): Json<CreatePostRequest>,
 ) -> Result<Json<PostResponse>, AppError> {
-    // Verify account belongs to user
     let account = sqlx::query_as::<_, crate::db::Account>(
         "SELECT * FROM accounts WHERE id = $1 AND user_id = $2",
     )
@@ -116,6 +164,19 @@ pub async fn create(
     }))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/posts/{id}",
+    tag = "posts",
+    security(("bearer_auth" = [])),
+    params(("id" = Uuid, Path, description = "Post ID")),
+    request_body = UpdatePostRequest,
+    responses(
+        (status = 200, description = "Post updated", body = PostResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Post not found")
+    )
+)]
 pub async fn update(
     State(state): State<std::sync::Arc<AppState>>,
     auth: AuthUser,
@@ -157,6 +218,18 @@ pub async fn update(
     }))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/posts/{id}",
+    tag = "posts",
+    security(("bearer_auth" = [])),
+    params(("id" = Uuid, Path, description = "Post ID")),
+    responses(
+        (status = 200, description = "Post deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Post not found")
+    )
+)]
 pub async fn delete(
     State(state): State<std::sync::Arc<AppState>>,
     auth: AuthUser,
@@ -178,6 +251,19 @@ pub async fn delete(
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/posts/{id}/publish",
+    tag = "posts",
+    security(("bearer_auth" = [])),
+    params(("id" = Uuid, Path, description = "Post ID")),
+    responses(
+        (status = 200, description = "Post published", body = PostResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Post not found"),
+        (status = 502, description = "Meta API error")
+    )
+)]
 pub async fn publish(
     State(state): State<std::sync::Arc<AppState>>,
     auth: AuthUser,
@@ -228,12 +314,16 @@ pub async fn publish(
     }))
 }
 
-#[derive(Serialize)]
-pub struct CalendarDay {
-    pub date: String,
-    pub posts: Vec<PostResponse>,
-}
-
+#[utoipa::path(
+    get,
+    path = "/api/calendar",
+    tag = "posts",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Calendar data", body = Vec<CalendarDay>),
+        (status = 401, description = "Unauthorized")
+    )
+)]
 pub async fn calendar(
     State(state): State<std::sync::Arc<AppState>>,
     auth: AuthUser,

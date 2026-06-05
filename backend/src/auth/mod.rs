@@ -2,30 +2,47 @@ use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
+use utoipa::ToSchema;
 
 use crate::error::AppError;
 use crate::AppState;
 
 pub mod middleware;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RegisterRequest {
+    /// User email address
     pub email: String,
+    /// Password (min 8 characters)
     pub password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct LoginRequest {
+    /// User email address
     pub email: String,
+    /// User password
     pub password: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct AuthResponse {
+    /// JWT authentication token
     pub token: String,
+    /// User ID
     pub user_id: Uuid,
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/auth/register",
+    tag = "auth",
+    request_body = RegisterRequest,
+    responses(
+        (status = 200, description = "User registered successfully", body = AuthResponse),
+        (status = 400, description = "Invalid input or email already exists")
+    )
+)]
 pub async fn register(
     State(state): State<std::sync::Arc<AppState>>,
     Json(req): Json<RegisterRequest>,
@@ -69,6 +86,16 @@ pub async fn register(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/auth/login",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = AuthResponse),
+        (status = 401, description = "Invalid credentials")
+    )
+)]
 pub async fn login(
     State(state): State<std::sync::Arc<AppState>>,
     Json(req): Json<LoginRequest>,
