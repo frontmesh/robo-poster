@@ -35,49 +35,47 @@ Users could not connect Instagram or Threads accounts. The entire OAuth flow was
 
 ---
 
-### BUG-002: Health Endpoint Behind Auth Middleware
+### BUG-002: Health Endpoint Behind Auth Middleware ✅ FIXED
 **Severity:** Critical
 **Location:** `backend/src/main.rs`
-**Status:** ⚠️ Needs fix
+**Status:** ✅ Fixed on 05-06-2026
 
 **Description:**
-The auth middleware is applied as a layer to the entire protected router. The health endpoint is added before the split, so it may be blocked by auth middleware.
+The auth middleware was applied as a layer to the entire protected router. The health endpoint was added before the split, so it was blocked by auth middleware.
 
 **Impact:**
-Docker health checks (`curl -f http://localhost:3000/health`) and monitoring tools cannot reach the health endpoint without authentication.
+Docker health checks (`curl -f http://localhost:3000/health`) and monitoring tools could not reach the health endpoint without authentication.
 
-**Current Behavior:**
-```rust
-let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
-    .route("/health", get(health))  // Added here
-    .routes(routes!(auth::register, auth::login))
-    .routes(routes!(accounts::list, ...))
-    .layer(middleware::from_fn(auth::middleware::auth_middleware))  // Applied to all above
-    .split_for_parts();
-```
+**Fix:**
+- Split routes into three groups: public, auth, and protected
+- Health endpoint in public routes (no auth)
+- Auth endpoints (register, login) in auth routes (no auth)
+- All other endpoints in protected routes (auth required)
+- Auth middleware applied only to protected routes
 
-**Fix Needed:**
-Move health endpoint to public routes, or apply middleware selectively:
-```rust
-// Option 1: Add health after middleware layer
-let protected_routes = Router::new()
-    .routes(routes!(accounts::list, ...))
-    .layer(middleware::from_fn(auth::middleware::auth_middleware));
-
-let app = Router::new()
-    .route("/health", get(health))  // No auth
-    .merge(protected_routes);       // Has auth
-```
+**Files Changed:**
+- `backend/src/main.rs` — Restructured router to separate public, auth, and protected routes
 
 ---
 
-### BUG-003: Premium Analytics Has No Ownership Check
+### BUG-003: Premium Analytics Has No Ownership Check ✅ FIXED
 **Severity:** Critical
 **Location:** `backend/src/premium/mod.rs:56-83`
-**Status:** ⚠️ Needs fix
+**Status:** ✅ Fixed on 05-06-2026
 
 **Description:**
-The `get_analytics()` handler accepts any `account_id` without verifying that the account belongs to the authenticated user.
+The `get_analytics()` handler accepted any `account_id` without verifying that the account belongs to the authenticated user.
+
+**Impact:**
+Any authenticated user could request analytics for any account by guessing or enumerating account UUIDs. This was a data leakage vulnerability.
+
+**Fix:**
+- Added `auth: AuthUser` parameter to `get_analytics()`
+- Added ownership check: `SELECT * FROM accounts WHERE id = $1 AND user_id = $2`
+- Returns 404 if account not found or doesn't belong to user
+
+**Files Changed:**
+- `backend/src/premium/mod.rs` — Added ownership validation
 
 **Impact:**
 Any authenticated user can request analytics for any account by guessing or enumerating account UUIDs. This is a data leakage vulnerability.
@@ -390,10 +388,10 @@ Carousel posts not supported.
 
 | Severity | Fixed | Open | Total |
 |----------|-------|------|-------|
-| 🔴 Critical | 1 | 2 | 3 |
+| 🔴 Critical | 3 | 0 | 3 |
 | 🟡 Medium | 0 | 7 | 7 |
 | 🟢 Low | 0 | 6 | 6 |
-| **Total** | **1** | **15** | **16** |
+| **Total** | **3** | **13** | **16** |
 
 ---
 

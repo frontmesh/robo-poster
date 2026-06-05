@@ -1,7 +1,9 @@
-use axum::{extract::State, Json};
+use axum::{extract::{State, Path}, Json};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use utoipa::ToSchema;
 
+use crate::auth::middleware::AuthUser;
 use crate::error::AppError;
 use crate::AppState;
 
@@ -82,13 +84,24 @@ pub async fn generate_content(
     responses(
         (status = 200, description = "Analytics data", body = AnalyticsResponse),
         (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Account not found"),
         (status = 502, description = "Premium API error")
     )
 )]
 pub async fn get_analytics(
     State(state): State<std::sync::Arc<AppState>>,
-    axum::extract::Path(account_id): axum::extract::Path<uuid::Uuid>,
+    auth: AuthUser,
+    Path(account_id): Path<Uuid>,
 ) -> Result<Json<AnalyticsResponse>, AppError> {
+    let account = sqlx::query_as::<_, crate::db::Account>(
+        "SELECT * FROM accounts WHERE id = $1 AND user_id = $2",
+    )
+    .bind(account_id)
+    .bind(auth.user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
     let client = reqwest::Client::new();
 
     let resp = client

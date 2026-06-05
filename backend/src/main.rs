@@ -1,4 +1,4 @@
-use axum::{middleware, routing::get, routing::post, Json, Router};
+use axum::{middleware, routing::get, Json, Router};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -111,9 +111,17 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
-        .route("/health", get(health))
+    // Public routes (no auth required)
+    let public_routes = Router::new()
+        .route("/health", get(health));
+
+    // Auth routes (no auth required)
+    let (auth_router, auth_api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(auth::register, auth::login))
+        .split_for_parts();
+
+    // Protected routes (auth required)
+    let (protected_router, protected_api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(
             accounts::list,
             accounts::connect,
@@ -134,6 +142,15 @@ async fn main() {
         ))
         .layer(middleware::from_fn(auth::middleware::auth_middleware))
         .split_for_parts();
+
+    // Merge all routes
+    let router = public_routes
+        .merge(auth_router)
+        .merge(protected_router);
+
+    // Merge API specs
+    let mut api = auth_api;
+    api.merge(protected_api);
 
     let app = router
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
