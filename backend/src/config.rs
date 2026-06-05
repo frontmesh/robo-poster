@@ -7,10 +7,17 @@ pub struct Config {
     pub meta_redirect_uri: String,
     pub premium_api_url: String,
     pub premium_api_key: String,
+    pub cors_origins: Vec<String>,
 }
 
 impl Config {
     pub fn from_env() -> Self {
+        let cors_origins = std::env::var("CORS_ORIGINS")
+            .unwrap_or_else(|_| "http://localhost:3000".to_string())
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+
         Self {
             database_url: std::env::var("DATABASE_URL")
                 .expect("DATABASE_URL must be set"),
@@ -26,6 +33,7 @@ impl Config {
                 .unwrap_or_else(|_| "http://localhost:3001".to_string()),
             premium_api_key: std::env::var("PREMIUM_API_KEY")
                 .unwrap_or_default(),
+            cors_origins,
         }
     }
 }

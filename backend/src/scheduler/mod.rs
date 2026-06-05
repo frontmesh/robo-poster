@@ -1,7 +1,9 @@
-use chrono::{DateTime, Utc, Duration};
-use sqlx::PgPool;
+use chrono::{Utc, Duration};
+use std::sync::Arc;
 
-pub async fn run_scheduler(pool: PgPool) {
+use crate::AppState;
+
+pub async fn run_scheduler(state: Arc<AppState>) {
     tracing::info!("Scheduler started");
 
     let mut publish_interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
@@ -10,12 +12,12 @@ pub async fn run_scheduler(pool: PgPool) {
     loop {
         tokio::select! {
             _ = publish_interval.tick() => {
-                if let Err(e) = publish_scheduled_posts(&pool).await {
+                if let Err(e) = publish_scheduled_posts(&state).await {
                     tracing::error!("Publish scheduler error: {}", e);
                 }
             }
             _ = token_interval.tick() => {
-                if let Err(e) = refresh_expiring_tokens(&pool).await {
+                if let Err(e) = refresh_expiring_tokens(&state).await {
                     tracing::error!("Token refresh error: {}", e);
                 }
             }
@@ -23,7 +25,7 @@ pub async fn run_scheduler(pool: PgPool) {
     }
 }
 
-async fn publish_scheduled_posts(pool: &PgPool) -> Result<(), sqlx::Error> {
+async fn publish_scheduled_posts(state: &Arc<AppState>) -> Result<(), sqlx::Error> {
     let posts = sqlx::query_as::<_, crate::db::Post>(
         "SELECT p.* FROM posts p
          JOIN accounts a ON p.account_id = a.id
@@ -32,7 +34,7 @@ async fn publish_scheduled_posts(pool: &PgPool) -> Result<(), sqlx::Error> {
          ORDER BY p.scheduled_at ASC
          LIMIT 10",
     )
-    .fetch_all(pool)
+    .fetch_all(&state.db)
     .await?;
 
     if posts.is_empty() {
@@ -46,7 +48,7 @@ async fn publish_scheduled_posts(pool: &PgPool) -> Result<(), sqlx::Error> {
             "SELECT * FROM accounts WHERE id = $1",
         )
         .bind(post.account_id)
-        .fetch_optional(pool)
+        .fetch_optional(&state.db)
         .await?;
 
         match account {
@@ -59,19 +61,17 @@ async fn publish_scheduled_posts(pool: &PgPool) -> Result<(), sqlx::Error> {
                             account.id,
                             post.id
                         );
-                        // Mark post as failed
                         sqlx::query(
                             "UPDATE posts SET status = 'failed' WHERE id = $1",
                         )
                         .bind(post.id)
-                        .execute(pool)
+                        .execute(&state.db)
                         .await?;
                         continue;
                     }
                 }
 
-                let config = crate::config::Config::from_env();
-                let meta_client = crate::meta::MetaClient::new(&config);
+                let meta_client = crate::meta::MetaClient::new(&state.config);
 
                 match meta_client.publish_post(&account, &post).await {
                     Ok(result) => {
@@ -80,14 +80,12 @@ async fn publish_scheduled_posts(pool: &PgPool) -> Result<(), sqlx::Error> {
                         )
                         .bind(&result.post_id)
                         .bind(post.id)
-                        .execute(pool)
+                        .execute(&state.db)
                         .await?;
                         tracing::info!("Published post {} to {}", post.id, account.provider);
                     }
                     Err(e) => {
                         tracing::error!("Failed to publish post {}: {}", post.id, e);
-                        // Don't mark as failed immediately - might be a transient error
-                        // The scheduler will retry on the next tick
                     }
                 }
             }
@@ -101,7 +99,7 @@ async fn publish_scheduled_posts(pool: &PgPool) -> Result<(), sqlx::Error> {
                     "UPDATE posts SET status = 'failed' WHERE id = $1",
                 )
                 .bind(post.id)
-                .execute(pool)
+                .execute(&state.db)
                 .await?;
             }
         }
@@ -110,14 +108,14 @@ async fn publish_scheduled_posts(pool: &PgPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-async fn refresh_expiring_tokens(pool: &PgPool) -> Result<(), sqlx::Error> {
+async fn refresh_expiring_tokens(state: &Arc<AppState>) -> Result<(), sqlx::Error> {
     let accounts = sqlx::query_as::<_, crate::db::Account>(
         "SELECT * FROM accounts
          WHERE token_expires_at IS NOT NULL
          AND token_expires_at < NOW() + INTERVAL '7 days'
          AND refresh_token IS NOT NULL",
     )
-    .fetch_all(pool)
+    .fetch_all(&state.db)
     .await?;
 
     if accounts.is_empty() {
@@ -126,22 +124,16 @@ async fn refresh_expiring_tokens(pool: &PgPool) -> Result<(), sqlx::Error> {
 
     tracing::info!("Checking {} accounts for token refresh", accounts.len());
 
-    let config = crate::config::Config::from_env();
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| sqlx::Error::Configuration(e.into()))?;
-
     for account in accounts {
         if let Some(refresh_token) = &account.refresh_token {
             tracing::info!("Refreshing token for account {} ({})", account.id, account.username);
 
-            let resp = client
+            let resp = state.http_client
                 .get("https://graph.facebook.com/v19.0/oauth/access_token")
                 .query(&[
                     ("grant_type", "fb_exchange_token"),
-                    ("client_id", &config.meta_app_id),
-                    ("client_secret", &config.meta_app_secret),
+                    ("client_id", &state.config.meta_app_id),
+                    ("client_secret", &state.config.meta_app_secret),
                     ("fb_exchange_token", refresh_token),
                 ])
                 .send()
@@ -149,7 +141,6 @@ async fn refresh_expiring_tokens(pool: &PgPool) -> Result<(), sqlx::Error> {
 
             match resp {
                 Ok(resp) => {
-                    let status = resp.status();
                     let body: Result<serde_json::Value, _> = resp.json().await;
 
                     match body {
@@ -165,7 +156,6 @@ async fn refresh_expiring_tokens(pool: &PgPool) -> Result<(), sqlx::Error> {
                             }
 
                             if let Some(new_token) = data["access_token"].as_str() {
-                                // Calculate new expiry (60 days from now)
                                 let new_expires_at = Utc::now() + Duration::days(59);
 
                                 sqlx::query(
@@ -174,7 +164,7 @@ async fn refresh_expiring_tokens(pool: &PgPool) -> Result<(), sqlx::Error> {
                                 .bind(new_token)
                                 .bind(new_expires_at)
                                 .bind(account.id)
-                                .execute(pool)
+                                .execute(&state.db)
                                 .await?;
 
                                 tracing::info!(

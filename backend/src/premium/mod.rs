@@ -49,9 +49,7 @@ pub async fn generate_content(
     State(state): State<std::sync::Arc<AppState>>,
     Json(req): Json<GenerateRequest>,
 ) -> Result<Json<GenerateResponse>, AppError> {
-    let client = reqwest::Client::new();
-
-    let resp = client
+    let resp = state.http_client
         .post(format!("{}/v1/ai/generate", state.config.premium_api_url))
         .header("Authorization", format!("Bearer {}", state.config.premium_api_key))
         .json(&serde_json::json!({
@@ -93,7 +91,7 @@ pub async fn get_analytics(
     auth: AuthUser,
     Path(account_id): Path<Uuid>,
 ) -> Result<Json<AnalyticsResponse>, AppError> {
-    let account = sqlx::query_as::<_, crate::db::Account>(
+    let _account = sqlx::query_as::<_, crate::db::Account>(
         "SELECT * FROM accounts WHERE id = $1 AND user_id = $2",
     )
     .bind(account_id)
@@ -102,9 +100,7 @@ pub async fn get_analytics(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let client = reqwest::Client::new();
-
-    let resp = client
+    let resp = state.http_client
         .get(format!(
             "{}/v1/analytics/{}",
             state.config.premium_api_url, account_id

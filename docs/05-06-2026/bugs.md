@@ -115,54 +115,49 @@ pub async fn get_analytics(
 
 ## 🟡 Medium Bugs
 
-### BUG-004: JWT Secret Read From Env Per Request
+### BUG-004: JWT Secret Read From Env Per Request ✅ FIXED
 **Severity:** Medium
 **Location:** `backend/src/auth/middleware.rs:66-67`
-**Status:** ⚠️ Needs fix
+**Status:** ✅ Fixed on 05-06-2026
 
 **Description:**
-The auth middleware reads `JWT_SECRET` from `std::env::var()` on every request instead of using the `AppState.config` value.
+The auth middleware was reading `JWT_SECRET` from `std::env::var()` on every request instead of using the `AppState.config` value.
 
 **Impact:**
 - Performance: System call on every request
 - Inconsistency: Could read different values if env changes during runtime
 
-**Current Code:**
-```rust
-let secret = std::env::var("JWT_SECRET")
-    .unwrap_or_else(|_| "dev-secret".to_string());
-```
+**Fix:**
+- Updated `auth_middleware` to accept `State<Arc<AppState>>` parameter
+- Now uses `state.config.jwt_secret` from shared state
+- Added `auth::middleware::auth_middleware` import in main.rs
 
-**Fix Needed:**
-Pass `AppState` to middleware and use `state.config.jwt_secret`.
+**Files Changed:**
+- `backend/src/auth/middleware.rs` — Updated middleware signature
+- `backend/src/main.rs` — Updated to use `from_fn_with_state`
 
 ---
 
-### BUG-005: CORS Allows All Origins
+### BUG-005: CORS Allows All Origins ✅ FIXED
 **Severity:** Medium
 **Location:** `backend/src/main.rs:113-116`
-**Status:** ⚠️ Needs fix
+**Status:** ✅ Fixed on 05-06-2026
 
 **Description:**
-`CorsLayer::new().allow_origin(Any)` allows any domain to make requests to the API.
+`CorsLayer::new().allow_origin(Any)` was allowing any domain to make requests to the API.
 
 **Impact:**
 Security risk in production. Malicious websites could make authenticated requests on behalf of users.
 
-**Current Code:**
-```rust
-let cors = CorsLayer::new()
-    .allow_origin(Any)
-    .allow_methods(Any)
-    .allow_headers(Any);
-```
+**Fix:**
+- Added `cors_origins` field to `Config` struct
+- CORS origins now configurable via `CORS_ORIGINS` environment variable
+- Defaults to `http://localhost:3000` if not set
+- Supports comma-separated list of origins
 
-**Fix Needed:**
-Configure allowed origins from environment variable:
-```rust
-let allowed_origins = std::env::var("CORS_ORIGINS")
-    .unwrap_or_else(|_| "http://localhost:3000".to_string());
-```
+**Files Changed:**
+- `backend/src/config.rs` — Added `cors_origins` field
+- `backend/src/main.rs` — Updated CORS configuration
 
 ---
 
@@ -240,51 +235,50 @@ pub fn hash_password(password: &str) -> String {
 
 ---
 
-### BUG-009: No Connection Pooling for External APIs
+### BUG-009: No Connection Pooling for External APIs ✅ FIXED
 **Severity:** Medium
 **Location:** `backend/src/premium/mod.rs:32`, `backend/src/scheduler/mod.rs:33`
-**Status:** ⚠️ Needs fix
+**Status:** ✅ Fixed on 05-06-2026
 
 **Description:**
-New `reqwest::Client` created per request in premium module and per tick in scheduler.
+New `reqwest::Client` was created per request in premium module and per tick in scheduler.
 
 **Impact:**
 - Performance: No connection reuse
 - Resource waste: New TCP connections for each request
 
-**Fix Needed:**
-Create shared client in `AppState`:
-```rust
-pub struct AppState {
-    pub db: sqlx::PgPool,
-    pub config: config::Config,
-    pub oauth_states: Mutex<HashMap<String, Uuid>>,
-    pub http_client: reqwest::Client,  // Add this
-}
-```
+**Fix:**
+- Added `http_client: reqwest::Client` to `AppState`
+- Created shared client in `AppState::new()` with 30s timeout
+- Updated `premium/mod.rs` to use `state.http_client`
+- Updated `scheduler/mod.rs` to use `state.http_client`
+
+**Files Changed:**
+- `backend/src/lib.rs` — Added `http_client` field to AppState
+- `backend/src/premium/mod.rs` — Updated to use shared client
+- `backend/src/scheduler/mod.rs` — Updated to use shared client
 
 ---
 
-### BUG-010: Scheduler Creates New Config/Client Per Tick
+### BUG-010: Scheduler Creates New Config/Client Per Tick ✅ FIXED
 **Severity:** Medium
 **Location:** `backend/src/scheduler/mod.rs:33-34`
-**Status:** ⚠️ Needs fix
+**Status:** ✅ Fixed on 05-06-2026
 
 **Description:**
-`Config::from_env()` and `MetaClient::new()` are called every 60 seconds instead of using shared state.
+`Config::from_env()` and `MetaClient::new()` were called every 60 seconds instead of using shared state.
 
 **Impact:**
 Inefficiency, potential inconsistency if env vars change.
 
-**Current Code:**
-```rust
-if let Some(account) = account {
-    let config = crate::config::Config::from_env();
-    let meta_client = crate::meta::MetaClient::new(&config);
-```
+**Fix:**
+- Updated `run_scheduler()` to accept `Arc<AppState>` instead of just `PgPool`
+- Now uses `state.config` and `state.http_client` from shared state
+- Updated `main.rs` to pass `state.clone()` to scheduler
 
-**Fix Needed:**
-Pass `AppState` to scheduler and use `state.config`.
+**Files Changed:**
+- `backend/src/scheduler/mod.rs` — Updated to use AppState
+- `backend/src/main.rs` — Updated scheduler call
 
 ---
 
@@ -389,9 +383,9 @@ Carousel posts not supported.
 | Severity | Fixed | Open | Total |
 |----------|-------|------|-------|
 | 🔴 Critical | 3 | 0 | 3 |
-| 🟡 Medium | 0 | 7 | 7 |
+| 🟡 Medium | 4 | 3 | 7 |
 | 🟢 Low | 0 | 6 | 6 |
-| **Total** | **3** | **13** | **16** |
+| **Total** | **7** | **9** | **16** |
 
 ---
 

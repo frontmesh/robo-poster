@@ -13,6 +13,7 @@ fn test_config() -> Config {
         meta_redirect_uri: "http://localhost:3000/callback".to_string(),
         premium_api_url: "http://localhost:3001".to_string(),
         premium_api_key: "test_key".to_string(),
+        cors_origins: vec!["http://localhost:3000".to_string()],
     }
 }
 

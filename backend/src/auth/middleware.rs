@@ -1,12 +1,14 @@
 use axum::{
-    extract::{FromRequestParts, Request},
+    extract::{FromRequestParts, Request, State},
     http::request::Parts,
     middleware::Next,
     response::Response,
 };
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::AppState;
 
 #[derive(Clone)]
 pub struct AuthUser {
@@ -72,6 +74,7 @@ impl AuthUser {
 }
 
 pub async fn auth_middleware(
+    State(state): State<Arc<AppState>>,
     mut req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
@@ -85,10 +88,7 @@ pub async fn auth_middleware(
         .strip_prefix("Bearer ")
         .ok_or(AppError::Unauthorized)?;
 
-    let secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "dev-secret".to_string());
-
-    let auth_user = AuthUser::from_token(token, &secret)?;
+    let auth_user = AuthUser::from_token(token, &state.config.jwt_secret)?;
 
     req.extensions_mut().insert(auth_user);
 

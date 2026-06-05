@@ -104,8 +104,9 @@ async fn main() {
 
     let state = Arc::new(AppState::new(pool.clone(), config.clone()));
 
-    tokio::spawn(scheduler::run_scheduler(pool.clone()));
+    tokio::spawn(scheduler::run_scheduler(state.clone()));
 
+    // Configure CORS
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -120,8 +121,8 @@ async fn main() {
         .routes(routes!(auth::register, auth::login))
         .split_for_parts();
 
-    // Protected routes (auth required)
-    let (protected_router, protected_api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
+    // Protected routes (auth required) - use axum::Router for middleware
+    let protected_api_router = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(
             accounts::list,
             accounts::connect,
@@ -139,14 +140,22 @@ async fn main() {
         .routes(routes!(
             premium::generate_content,
             premium::get_analytics,
-        ))
-        .layer(middleware::from_fn(auth::middleware::auth_middleware))
-        .split_for_parts();
+        ));
+
+    let (protected_router, protected_api) = protected_api_router.split_for_parts();
+
+    // Apply auth middleware to protected routes using axum Router
+    let protected_with_auth = Router::new()
+        .merge(protected_router)
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::middleware::auth_middleware,
+        ));
 
     // Merge all routes
     let router = public_routes
         .merge(auth_router)
-        .merge(protected_router);
+        .merge(protected_with_auth);
 
     // Merge API specs
     let mut api = auth_api;
