@@ -143,7 +143,36 @@
     <div id="elm-root"></div>
     <script src="elm.js"></script>
     <script>
-        Elm.Main.init({ node: document.getElementById("elm-root") });
+        var storedToken = localStorage.getItem("poster_token");
+        var apiBaseUrl = window.location.origin + "/api";
+        
+        var app = Elm.Main.init({
+            node: document.getElementById("elm-root"),
+            flags: {
+                token: storedToken,
+                userId: localStorage.getItem("poster_user_id"),
+                apiBaseUrl: apiBaseUrl
+            }
+        });
+        
+        if (app.ports && app.ports.saveToken) {
+            app.ports.saveToken.subscribe(function(token) {
+                localStorage.setItem("poster_token", token);
+            });
+        }
+        
+        if (app.ports && app.ports.saveUserId) {
+            app.ports.saveUserId.subscribe(function(userId) {
+                localStorage.setItem("poster_user_id", userId);
+            });
+        }
+        
+        if (app.ports && app.ports.clearStorage) {
+            app.ports.clearStorage.subscribe(function() {
+                localStorage.removeItem("poster_token");
+                localStorage.removeItem("poster_user_id");
+            });
+        }
     </script>
 </body>
 </html>

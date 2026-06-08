@@ -7,7 +7,11 @@ fn hash_password_deterministic() {
     let pw = "test_password_123";
     let hash1 = hash_password(pw);
     let hash2 = hash_password(pw);
-    assert_eq!(hash1, hash2);
+    // Argon2 uses random salts, so hashes are different each time
+    // But both should verify correctly
+    assert_ne!(hash1, hash2);
+    assert!(verify_password(pw, &hash1));
+    assert!(verify_password(pw, &hash2));
 }
 
 #[test]

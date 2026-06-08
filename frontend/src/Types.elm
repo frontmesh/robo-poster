@@ -21,6 +21,7 @@ type alias Model =
     , publishing : Maybe String
     , dashboardFilter : PostFilter
     , deleteConfirm : Maybe String
+    , apiBaseUrl : String
     }
 
 

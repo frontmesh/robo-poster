@@ -161,62 +161,78 @@ Security risk in production. Malicious websites could make authenticated request
 
 ---
 
-### BUG-006: No Token Persistence in Frontend
+### BUG-006: No Token Persistence in Frontend ✅ FIXED
 **Severity:** Medium
 **Location:** `frontend/src/Main.elm`
-**Status:** ⚠️ Needs fix
+**Status:** ✅ Fixed on 05-06-2026
 
 **Description:**
-Token is stored only in the Elm model (in-memory). Page refresh or browser restart loses the session.
+Token was stored only in the Elm model (in-memory). Page refresh or browser restart loses the session.
 
 **Impact:**
-Users must re-login on every page refresh. Poor user experience.
+Users had to re-login on every page refresh. Poor user experience.
 
-**Fix Needed:**
-Add localStorage persistence via ports:
-```elm
-port module Main exposing (..)
-port saveToken : String -> Cmd msg
-port loadToken : () -> Cmd msg
-```
+**Fix:**
+- Added port module declaration with localStorage ports
+- Added Flags type to receive token from JavaScript
+- Updated init to load token from flags
+- Added saveToken port to persist token on login
+- Added clearStorage port to clear token on logout
+- Updated index.html to pass flags and subscribe to ports
+
+**Files Changed:**
+- `frontend/src/Main.elm` — Added ports, flags, localStorage persistence
+- `frontend/src/Types.elm` — Added apiBaseUrl field to Model
+- `frontend/public/index.html` — Added JavaScript for localStorage
 
 ---
 
-### BUG-007: Hardcoded Frontend API URL
+### BUG-007: Hardcoded Frontend API URL ✅ FIXED
 **Severity:** Medium
 **Location:** `frontend/src/Api.elm:12`
-**Status:** ⚠️ Needs fix
+**Status:** ✅ Fixed on 05-06-2026
 
 **Description:**
-`baseUrl = "http://localhost:3000/api"` is hardcoded.
+`baseUrl = "http://localhost:3000/api"` was hardcoded.
 
 **Impact:**
-Cannot deploy frontend to a different domain or port.
+Could not deploy frontend to a different domain or port.
 
-**Fix Needed:**
-Pass base URL via flags:
-```elm
-main : Program { apiBaseUrl : String } Model Msg
-```
+**Fix:**
+- Removed hardcoded baseUrl from Api.elm
+- All API functions now accept apiBaseUrl as parameter
+- apiBaseUrl passed via Flags from JavaScript
+- index.html sets apiBaseUrl to `window.location.origin + "/api"`
+
+**Files Changed:**
+- `frontend/src/Api.elm` — Updated all functions to accept apiBaseUrl
+- `frontend/src/Types.elm` — Added apiBaseUrl to Model
+- `frontend/src/Main.elm` — Pass apiBaseUrl to API functions
+- `frontend/public/index.html` — Set apiBaseUrl dynamically
 
 ---
 
-### BUG-008: blake3 For Password Hashing
+### BUG-008: blake3 For Password Hashing ✅ FIXED
 **Severity:** Medium
 **Location:** `backend/src/auth/mod.rs:97-101`
-**Status:** ⚠️ Needs fix
+**Status:** ✅ Fixed on 05-06-2026
 
 **Description:**
-blake3 is a fast general-purpose hash, not a password-specific KDF like argon2/bcrypt/scrypt.
+blake3 was used for password hashing, which is a fast general-purpose hash, not a password-specific KDF.
 
 **Impact:**
-Vulnerable to brute-force attacks. Passwords can be cracked faster than with proper KDFs.
+Vulnerable to brute-force attacks. Passwords could be cracked faster than with proper KDFs.
 
-**Current Code:**
-```rust
-pub fn hash_password(password: &str) -> String {
-    let hash = blake3::hash(password.as_bytes());
-    base64::engine::general_purpose::STANDARD.encode(hash.as_bytes())
+**Fix:**
+- Migrated from blake3 to argon2 for password hashing
+- argon2 is a memory-hard KDF designed for password hashing
+- Uses random salt for each password (rainbow table resistant)
+- Updated test to verify argon2 behavior (different hashes for same password)
+
+**Files Changed:**
+- `backend/Cargo.toml` — Added argon2, password-hash, rand_core crates
+- `backend/src/auth/mod.rs` — Updated hash_password and verify_password functions
+- `backend/tests/auth_tests.rs` — Updated test to verify argon2 behavior
 }
 ```
 
@@ -383,9 +399,9 @@ Carousel posts not supported.
 | Severity | Fixed | Open | Total |
 |----------|-------|------|-------|
 | 🔴 Critical | 3 | 0 | 3 |
-| 🟡 Medium | 4 | 3 | 7 |
+| 🟡 Medium | 7 | 0 | 7 |
 | 🟢 Low | 0 | 6 | 6 |
-| **Total** | **7** | **9** | **16** |
+| **Total** | **10** | **6** | **16** |
 
 ---
 

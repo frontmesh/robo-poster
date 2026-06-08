@@ -22,6 +22,9 @@ url = "2"
 blake3 = "1"
 hmac = "0.12"
 sha2 = "0.10"
+argon2 = "0.5"
+password-hash = "0.5"
+rand_core = { version = "0.6", features = ["std"] }
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-axum = "0.2"
 utoipa-swagger-ui = { version = "9", features = ["axum"] }

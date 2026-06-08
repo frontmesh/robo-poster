@@ -122,18 +122,27 @@ pub async fn login(
 }
 
 pub fn hash_password(password: &str) -> String {
-    use base64::Engine;
-    let hash = blake3::hash(password.as_bytes());
-    base64::engine::general_purpose::STANDARD.encode(hash.as_bytes())
+    use argon2::password_hash::{rand_core::OsRng, SaltString};
+    use argon2::PasswordHasher;
+    
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = argon2::Argon2::default();
+    let hash = argon2.hash_password(password.as_bytes(), &salt)
+        .expect("Failed to hash password");
+    hash.to_string()
 }
 
 pub fn verify_password(password: &str, hash: &str) -> bool {
-    use base64::Engine;
-    let computed = blake3::hash(password.as_bytes());
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(hash)
-        .unwrap_or_default();
-    computed.as_bytes() == decoded.as_slice()
+    use argon2::password_hash::{PasswordHash, PasswordVerifier};
+    
+    let parsed_hash = match PasswordHash::new(hash) {
+        Ok(h) => h,
+        Err(_) => return false,
+    };
+    
+    argon2::Argon2::default()
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .is_ok()
 }
 
 pub fn create_jwt(user_id: Uuid, secret: &str) -> String {
